@@ -5,6 +5,7 @@
 //! Navigates with j/k/Enter/h (vi-style).
 
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver};
 
 use camino::Utf8PathBuf;
 use crossterm::event::{Event, KeyCode, KeyEventKind};
@@ -17,6 +18,7 @@ use ratatui::widgets::{
     Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph,
 };
 
+use wisp_core::CoreResult;
 use wisp_core::scanner::{ScanOptions, scan_directory};
 use wisp_core::types::{ScanNode, ScanTree};
 use wisp_engine::Engine;
@@ -32,8 +34,8 @@ struct Entry {
 }
 
 enum ScanState {
-    Idle,
-    Scanning,
+    /// Scan in progress; background thread sends result through `rx`.
+    Scanning(Receiver<CoreResult<ScanTree>>),
     Done(ScanTree),
     Error(String),
 }
@@ -44,8 +46,9 @@ pub struct AnalyzerPage {
     root: Utf8PathBuf,
     entries: Vec<Entry>,
     list_state: ListState,
-    scan_state: ScanState,
+    scan_state: Option<ScanState>,
     total_size: u64,
+    tick_count: usize,
 }
 
 impl AnalyzerPage {
@@ -55,47 +58,54 @@ impl AnalyzerPage {
             root: path.clone(),
             entries: Vec::new(),
             list_state: ListState::default(),
-            scan_state: ScanState::Idle,
+            scan_state: None,
             total_size: 0,
+            tick_count: 0,
         };
         page.start_scan(path);
         page
     }
 
+    /// Kick off a background scan of `path`.  The current thread is never
+    /// blocked; `tick()` polls the channel each frame.
     fn start_scan(&mut self, path: Utf8PathBuf) {
         self.root = path.clone();
         self.entries.clear();
         self.total_size = 0;
-        self.scan_state = ScanState::Scanning;
-        // Scan is triggered async in tick() on the first idle poll.
-        // We store the path so tick() can pick it up.
+
+        let (tx, rx) = mpsc::channel::<CoreResult<ScanTree>>();
+
+        std::thread::spawn(move || {
+            // Full recursive scan — no depth limit so accumulate_sizes works.
+            let opts = ScanOptions { max_depth: None, min_size: None, follow_symlinks: false };
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .expect("tokio rt");
+            let result = rt.block_on(scan_directory(path, opts));
+            let _ = tx.send(result);
+        });
+
+        self.scan_state = Some(ScanState::Scanning(rx));
     }
 
+    /// Called each frame while no keyboard event is pending.
     pub fn tick(&mut self) {
-        // Trigger blocking scan on first tick after Scanning state is set.
-        // We use std::thread here to avoid needing async in tick.
-        if matches!(self.scan_state, ScanState::Scanning) {
-            self.scan_state = ScanState::Idle; // prevent re-entry
+        self.tick_count = self.tick_count.wrapping_add(1);
 
-            let root = self.root.clone();
-            // Run synchronous scan; we accept blocking the event loop briefly
-            // for simplicity. A proper async version would use tokio channels.
-            let opts = ScanOptions { max_depth: Some(1), min_size: None, follow_symlinks: false };
-            match std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .build()
-                    .expect("tokio rt");
-                rt.block_on(scan_directory(root, opts))
-            }).join() {
+        if let Some(ScanState::Scanning(rx)) = &self.scan_state {
+            // Non-blocking check — if the scan is done, consume the result.
+            match rx.try_recv() {
                 Ok(Ok(tree)) => {
                     self.load_tree(&tree);
-                    self.scan_state = ScanState::Done(tree);
+                    self.scan_state = Some(ScanState::Done(tree));
                 }
                 Ok(Err(e)) => {
-                    self.scan_state = ScanState::Error(e.to_string());
+                    self.scan_state = Some(ScanState::Error(e.to_string()));
                 }
-                Err(_) => {
-                    self.scan_state = ScanState::Error("scan thread panicked".into());
+                Err(mpsc::TryRecvError::Empty) => {}     // still in progress
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.scan_state =
+                        Some(ScanState::Error("scan thread exited unexpectedly".into()));
                 }
             }
         }
@@ -161,17 +171,20 @@ impl AnalyzerPage {
         f.render_widget(breadcrumb, chunks[0]);
 
         match &self.scan_state {
-            ScanState::Idle | ScanState::Scanning => {
-                let spinner = Paragraph::new(" Scanning…")
+            None | Some(ScanState::Scanning(_)) => {
+                let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+                let s = spinner_chars[self.tick_count % spinner_chars.len()];
+                let msg = Paragraph::new(format!(" {s} Scanning…  (recursive, may take a moment)"))
                     .style(Style::default().fg(Color::Yellow));
-                f.render_widget(spinner, chunks[1]);
-            }
-            ScanState::Error(e) => {
-                let msg =
-                    Paragraph::new(format!(" Error: {e}")).style(Style::default().fg(Color::Red));
                 f.render_widget(msg, chunks[1]);
             }
-            ScanState::Done(_) => {
+            Some(ScanState::Error(e)) => {
+                let e = e.clone();
+                let msg = Paragraph::new(format!(" Error: {e}"))
+                    .style(Style::default().fg(Color::Red));
+                f.render_widget(msg, chunks[1]);
+            }
+            Some(ScanState::Done(_)) => {
                 self.render_entries(f, chunks[1]);
             }
         }
@@ -228,7 +241,7 @@ impl AnalyzerPage {
 
         f.render_stateful_widget(list, panes[0], &mut self.list_state);
 
-        // ── Right: bar chart (top 10) ────────────────────────────────────
+        // ── Right: bar chart ──────────────────────────────────────────────
         let bar_area = panes[1];
         let block = Block::default()
             .borders(Borders::ALL)
@@ -246,23 +259,19 @@ impl AnalyzerPage {
             return;
         }
 
-        let row_h = 1u16;
         for (i, entry) in self.entries.iter().take(n).enumerate() {
             let ratio = entry.size as f64 / self.total_size as f64;
             let label = format!(
-                "{} {}",
+                "{} {}{}",
                 format_size(entry.size, DECIMAL),
-                if entry.is_dir {
-                    format!("{}/", entry.name)
-                } else {
-                    entry.name.clone()
-                }
+                entry.name,
+                if entry.is_dir { "/" } else { "" },
             );
             let gauge_rect = Rect {
                 x: inner.x,
-                y: inner.y + i as u16 * row_h,
+                y: inner.y + i as u16,
                 width: inner.width,
-                height: row_h,
+                height: 1,
             };
             let gauge = Gauge::default()
                 .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
