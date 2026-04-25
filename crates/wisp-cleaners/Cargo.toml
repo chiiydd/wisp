@@ -10,6 +10,9 @@ description  = "L3 – Cleaner implementations for wisp"
 [dependencies]
 wisp-core     = { workspace = true }
 wisp-platform = { workspace = true }
+dirs          = { workspace = true }
+directories   = { workspace = true }
+camino        = { workspace = true }
 linkme        = { workspace = true }
 tokio         = { workspace = true }
 tracing       = { workspace = true }

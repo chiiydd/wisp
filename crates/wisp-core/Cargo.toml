@@ -30,7 +30,11 @@ directories = { workspace = true }
 
 # Utilities
 humansize   = { workspace = true }
+trash       = { workspace = true }
 tracing     = { workspace = true }
+tokio       = { workspace = true }
+jwalk       = { workspace = true }
+rayon       = { workspace = true }
 
 [lints]
 workspace = true

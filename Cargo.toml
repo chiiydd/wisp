@@ -39,6 +39,7 @@ toml        = "0.8"
 
 # Paths & OS directories
 camino      = { version = "1.1", features = ["serde1"] }
+dirs        = "5.0"
 directories = "5.0"
 
 # Async runtime
@@ -58,8 +59,10 @@ tracing-appender   = "0.2"
 tracing-error      = "0.2"
 
 # CLI / interaction
-clap    = { version = "4.5", features = ["derive", "cargo", "env"] }
-inquire = "0.7"
+clap          = { version = "4.5", features = ["derive", "cargo", "env"] }
+clap_complete = "4.5"
+clap_mangen   = "0.2"
+inquire       = "0.7"
 
 # TUI
 ratatui   = "0.29"
