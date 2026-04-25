@@ -4,44 +4,54 @@
 //! All file operations must go through this module so that the blacklist and
 //! dry-run checks are always enforced.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 
 use crate::errors::{CoreError, CoreResult};
 
-// ─── Hard-coded blacklist ────────────────────────────────────────────────────
+// ─── Blacklist design ─────────────────────────────────────────────────────────
+//
+//  Two tiers with different semantics:
+//
+//  EXACT_BLACKLIST   — protect the directory *itself* but allow its children.
+//                      E.g. /home: the directory must not be deleted, but
+//                      /home/user/.cache/… is fair game for cleaners.
+//
+//  PREFIX_BLACKLIST  — protect the directory AND every descendant.
+//                      Used for core OS directories (/etc, /usr, …) where
+//                      no child should ever be touched by a cleaner.
+//
+//  WHITELIST         — paths inside a PREFIX_BLACKLIST that are explicitly
+//                      allowed (e.g. /var/cache/pacman/pkg inside /var).
+//
+//  Check order: whitelist → exact → prefix → user-home guard.
 
-/// Paths that are never touched regardless of what any cleaner requests.
-static BLACKLISTED_PREFIXES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    [
-        "/",
-        "/bin",
-        "/boot",
-        "/dev",
-        "/etc",
-        "/home",
-        "/lib",
-        "/lib64",
-        "/proc",
-        "/root",
-        "/run",
-        "/sbin",
-        "/sys",
-        "/usr",
-        "/var",
-    ]
-    .into()
-});
+/// Directories that must never be deleted themselves, but whose *children*
+/// are allowed (managed by individual cleaners).
+static EXACT_BLACKLIST: &[&str] = &["/", "/home", "/tmp"];
 
-/// Paths within a blacklisted prefix that are explicitly allowed for cleaning.
-static WHITELISTED_PATHS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    [
-        "/var/cache/pacman/pkg",
-        "/var/log/journal",
-    ]
-    .into()
-});
+/// Directories where both the path and **all descendants** are off-limits.
+static PREFIX_BLACKLIST: &[&str] = &[
+    "/bin",
+    "/boot",
+    "/dev",
+    "/etc",
+    "/lib",
+    "/lib64",
+    "/proc",
+    "/root",   // root's home: treat as system area
+    "/run",
+    "/sbin",
+    "/srv",
+    "/sys",
+    "/usr",
+    "/var",
+];
+
+/// Paths inside a PREFIX_BLACKLIST that individual cleaners are allowed to target.
+static WHITELIST: &[&str] = &[
+    "/var/cache/pacman/pkg",
+    "/var/log/journal",
+];
 
 // ─── Path validation ──────────────────────────────────────────────────────────
 
@@ -58,17 +68,35 @@ pub fn validate_path(path: &Path) -> CoreResult<PathBuf> {
 pub fn check_blacklist(canonical: &Path) -> CoreResult<()> {
     let s = canonical.to_string_lossy();
 
-    // If the path is in the whitelist it's always OK.
-    if WHITELISTED_PATHS.contains(s.as_ref()) {
-        return Ok(());
+    // ── 1. Whitelist (highest priority) ─────────────────────────────────
+    for &allowed in WHITELIST {
+        if s == allowed || s.starts_with(&format!("{allowed}/")) {
+            return Ok(());
+        }
     }
 
-    for prefix in BLACKLISTED_PREFIXES.iter() {
-        // Exact match or proper prefix (path starts with "/etc/")
-        if s == *prefix || s.starts_with(&format!("{prefix}/")) {
+    // ── 2. Exact blacklist — protect the directory itself only ───────────
+    for &exact in EXACT_BLACKLIST {
+        if s == exact {
             return Err(CoreError::BlacklistedPath { path: s.into_owned() });
         }
     }
+
+    // ── 3. Prefix blacklist — protect directory AND all descendants ──────
+    for &prefix in PREFIX_BLACKLIST {
+        if s == prefix || s.starts_with(&format!("{prefix}/")) {
+            return Err(CoreError::BlacklistedPath { path: s.into_owned() });
+        }
+    }
+
+    // ── 4. Protect the running user's home directory itself ──────────────
+    //    (allow /home/user/.cache/… but not /home/user itself)
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() && s == home.as_str() {
+            return Err(CoreError::BlacklistedPath { path: s.into_owned() });
+        }
+    }
+
     Ok(())
 }
 
@@ -94,12 +122,32 @@ mod tests {
     }
 
     #[test]
-    fn etc_is_blacklisted() {
+    fn etc_and_children_are_blacklisted() {
+        assert!(check_blacklist(Path::new("/etc")).is_err());
         assert!(check_blacklist(Path::new("/etc/passwd")).is_err());
     }
 
     #[test]
-    fn tmp_is_allowed() {
+    fn home_dir_itself_is_blacklisted() {
+        assert!(check_blacklist(Path::new("/home")).is_err());
+    }
+
+    #[test]
+    fn home_subdir_is_allowed() {
+        // /home/user/.cache/… must NOT be blocked — this is what cleaners target
+        assert!(check_blacklist(Path::new("/home/user/.cache/chromium")).is_ok());
+        assert!(check_blacklist(Path::new("/home/user/.local/share/Trash/files/foo")).is_ok());
+    }
+
+    #[test]
+    fn var_is_blacklisted_but_pacman_cache_is_allowed() {
+        assert!(check_blacklist(Path::new("/var/lib/pacman")).is_err());
+        assert!(check_blacklist(Path::new("/var/cache/pacman/pkg")).is_ok());
+    }
+
+    #[test]
+    fn tmp_itself_blocked_but_children_allowed() {
+        assert!(check_blacklist(Path::new("/tmp")).is_err());
         assert!(check_blacklist(Path::new("/tmp/wisp-test")).is_ok());
     }
 
