@@ -1,0 +1,31 @@
+[package]
+name         = "wisp-cli"
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+rust-version.workspace = true
+description  = "wisp – modern disk cleanup and analysis tool for Arch Linux"
+
+[[bin]]
+name = "wisp"
+path = "src/main.rs"
+
+[dependencies]
+wisp-core    = { workspace = true }
+wisp-engine  = { workspace = true }
+wisp-platform = { workspace = true }
+clap         = { workspace = true }
+color-eyre   = { workspace = true }
+tokio        = { workspace = true }
+tracing      = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender   = { workspace = true }
+tracing-error      = { workspace = true }
+mimalloc     = { workspace = true }
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+toml         = { workspace = true }
+
+[lints]
+workspace = true

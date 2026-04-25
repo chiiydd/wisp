@@ -1,0 +1,120 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/wisp-core",
+    "crates/wisp-platform",
+    "crates/wisp-cleaners",
+    "crates/wisp-engine",
+    "crates/wisp-tui",
+    "crates/wisp-cli",
+    "xtask",
+]
+default-members = ["crates/wisp-cli"]
+
+[workspace.package]
+version       = "0.1.0"
+edition       = "2024"
+license       = "MIT OR Apache-2.0"
+repository    = "https://github.com/chiiydd/wisp"
+rust-version  = "1.90"
+authors       = ["wisp contributors"]
+
+# ─── Workspace-wide dependencies ───────────────────────────────────────────────
+[workspace.dependencies]
+# Internal crates
+wisp-core     = { path = "crates/wisp-core" }
+wisp-platform = { path = "crates/wisp-platform" }
+wisp-cleaners = { path = "crates/wisp-cleaners" }
+wisp-engine   = { path = "crates/wisp-engine" }
+wisp-tui      = { path = "crates/wisp-tui" }
+
+# Error handling
+thiserror   = "2.0"
+color-eyre  = "0.6"
+
+# Serialization
+serde       = { version = "1.0", features = ["derive"] }
+serde_json  = "1.0"
+toml        = "0.8"
+
+# Paths & OS directories
+camino      = { version = "1.1", features = ["serde1"] }
+directories = "5.0"
+
+# Async runtime
+tokio = { version = "1.40", features = [
+    "rt-multi-thread", "fs", "process", "signal",
+    "sync", "io-util", "macros",
+] }
+
+# Parallelism & scanning
+rayon = "1.10"
+jwalk = "0.8"
+
+# Logging / tracing
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "ansi"] }
+tracing-appender   = "0.2"
+tracing-error      = "0.2"
+
+# CLI / interaction
+clap    = { version = "4.5", features = ["derive", "cargo", "env"] }
+inquire = "0.7"
+
+# TUI
+ratatui   = "0.29"
+crossterm = "0.28"
+
+# Progress
+indicatif = "0.17"
+
+# Data structures
+compact_str = { version = "0.8", features = ["serde"] }
+smallvec    = { version = "1.13", features = ["serde", "union"] }
+slotmap     = { version = "1.0", features = ["serde"] }
+
+# Utilities
+humansize = "2.1"
+trash     = "5.2"
+uuid      = { version = "1.11", features = ["v4", "serde"] }
+linkme    = "0.3"
+mimalloc  = { version = "0.1", default-features = false }
+
+# Testing
+insta       = { version = "1", features = ["json", "toml"] }
+assert_cmd  = "2"
+predicates  = "3"
+tempfile    = "3"
+proptest    = "1"
+rstest      = "0.23"
+criterion   = { version = "0.5", features = ["html_reports"] }
+
+# ─── Workspace-wide lints ──────────────────────────────────────────────────────
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+pedantic                  = { level = "warn", priority = -1 }
+nursery                   = { level = "warn", priority = -1 }
+unwrap_used               = "warn"
+expect_used               = "warn"
+# Common false-positives suppressed project-wide
+module_name_repetitions   = "allow"
+must_use_candidate        = "allow"
+missing_errors_doc        = "allow"
+missing_panics_doc        = "allow"
+wildcard_imports          = "allow"
+
+# ─── Build profiles ────────────────────────────────────────────────────────────
+[profile.release]
+lto            = "fat"
+codegen-units  = 1
+strip          = "symbols"
+panic          = "abort"
+
+[profile.release-small]
+inherits  = "release"
+opt-level = "z"
+
+[profile.dev]
+split-debuginfo = "unpacked"

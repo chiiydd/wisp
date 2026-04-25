@@ -1,0 +1,19 @@
+[package]
+name         = "wisp-cleaners"
+version.workspace    = true
+edition.workspace    = true
+license.workspace    = true
+repository.workspace = true
+rust-version.workspace = true
+description  = "L3 – Cleaner implementations for wisp"
+
+[dependencies]
+wisp-core     = { workspace = true }
+wisp-platform = { workspace = true }
+linkme        = { workspace = true }
+tokio         = { workspace = true }
+tracing       = { workspace = true }
+serde         = { workspace = true }
+
+[lints]
+workspace = true

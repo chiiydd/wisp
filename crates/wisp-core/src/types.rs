@@ -1,0 +1,276 @@
+//! Canonical shared data types (Section 6 of the design doc).
+//!
+//! All fields of these types are treated as **breaking changes** in semver.
+
+use std::future::Future;
+use std::pin::Pin;
+
+use camino::Utf8PathBuf;
+use compact_str::CompactString;
+use serde::{Deserialize, Serialize};
+use slotmap::{DefaultKey, SlotMap};
+use uuid::Uuid;
+
+use wisp_platform::Distro;
+
+// ─── Risk & grouping ──────────────────────────────────────────────────────────
+
+/// Safety classification for a cleaner or a single action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RiskLevel {
+    /// Thumbnails, HTTP caches – safe to delete unconditionally.
+    Trivial,
+    /// Pacman cache, journal logs – safe in normal conditions.
+    Safe,
+    /// Orphan packages, unused flatpak data – user should understand impact.
+    Moderate,
+    /// `/tmp`, `docker system prune -a` – must be explicitly confirmed.
+    Dangerous,
+}
+
+/// Logical grouping of cleaners.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CleanerGroup {
+    System,
+    User,
+    Dev,
+}
+
+// ─── Cleaner identity ─────────────────────────────────────────────────────────
+
+/// Stable string identifier for a cleaner, e.g. `"arch.pacman"`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CleanerId(pub CompactString);
+
+impl CleanerId {
+    pub fn new(id: impl Into<CompactString>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CleanerId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+// ─── CleanerMeta trait (sync, object-safe) ───────────────────────────────────
+
+/// Synchronous, object-safe half of a cleaner – used for listing, filtering,
+/// and display.  Does **not** touch the filesystem.
+pub trait CleanerMeta: Send + Sync {
+    fn id(&self) -> CleanerId;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn risk(&self) -> RiskLevel;
+    fn requires_root(&self) -> bool;
+    /// Whether this cleaner is applicable on the given distribution.
+    fn supported_on(&self, distro: &dyn Distro) -> bool;
+    fn group(&self) -> CleanerGroup;
+}
+
+// ─── Privileges ───────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Privileges {
+    pub requires_root: bool,
+}
+
+// ─── CleanAction ─────────────────────────────────────────────────────────────
+
+/// How a file should be removed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeletionVia {
+    Trash,
+    Direct,
+}
+
+/// A command descriptor for `RunExternal` actions (replaces non-serialisable
+/// `std::process::Command`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalCmd {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+/// A single concrete action that the Engine will execute.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CleanAction {
+    Delete {
+        path: Utf8PathBuf,
+        /// Pre-computed size in bytes; 0 means unknown.
+        size: u64,
+        via: DeletionVia,
+    },
+    RunExternal {
+        cmd: ExternalCmd,
+        estimated_size: Option<u64>,
+    },
+}
+
+// ─── Plan ─────────────────────────────────────────────────────────────────────
+
+/// A complete, validated cleaning plan ready for Engine execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanPlan {
+    pub id: Uuid,
+    pub actions: Vec<CleanAction>,
+    /// Sum of known `size` fields; may undercount when sizes are unknown.
+    pub estimated_size: u64,
+    pub required_privileges: Privileges,
+    /// Highest `RiskLevel` among all actions.
+    pub risk: RiskLevel,
+}
+
+/// Lightweight summary emitted as the first `ProgressEvent`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanPlanSummary {
+    pub id: Uuid,
+    pub action_count: usize,
+    pub estimated_size: u64,
+    pub risk: RiskLevel,
+}
+
+impl From<&CleanPlan> for CleanPlanSummary {
+    fn from(p: &CleanPlan) -> Self {
+        Self {
+            id: p.id,
+            action_count: p.actions.len(),
+            estimated_size: p.estimated_size,
+            risk: p.risk,
+        }
+    }
+}
+
+// ─── Progress events ──────────────────────────────────────────────────────────
+
+/// Opaque identifier for a single in-flight action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ActionId(pub u64);
+
+/// Per-action outcome.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ActionResult {
+    Success { bytes_freed: u64 },
+    Skipped { reason: String },
+    Failed { error: String },
+}
+
+/// Events emitted by the Engine over a channel.
+///
+/// Both the streaming JSONL output format and the TUI consume this enum.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum ProgressEvent {
+    PlanBuilt(CleanPlanSummary),
+    ActionStarted { id: ActionId },
+    ActionProgress { id: ActionId, bytes_done: u64 },
+    ActionFinished { id: ActionId, result: ActionResult },
+    PlanFinished(CleanReport),
+    Warning(String),
+}
+
+// ─── Report ───────────────────────────────────────────────────────────────────
+
+/// Aggregate result for an entire plan execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanReport {
+    pub plan_id: Uuid,
+    pub succeeded: usize,
+    pub failed: usize,
+    pub skipped: usize,
+    pub bytes_freed: u64,
+}
+
+// ─── Output envelope ──────────────────────────────────────────────────────────
+
+/// Structured error info for `OutputEnvelope`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorInfo {
+    pub message: String,
+    pub code: Option<String>,
+}
+
+/// Wrapper for `--output json` responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputEnvelope<T> {
+    pub version: String,
+    pub command: String,
+    pub data: T,
+    pub warnings: Vec<String>,
+    pub errors: Vec<ErrorInfo>,
+}
+
+impl<T: Serialize> OutputEnvelope<T> {
+    pub fn new(command: impl Into<String>, data: T) -> Self {
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            command: command.into(),
+            data,
+            warnings: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+}
+
+// ─── Confirmation ─────────────────────────────────────────────────────────────
+
+/// Response from a `Confirmer` to an `Engine` confirmation request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Confirmation {
+    Approved,
+    Denied,
+    /// Approve this and all subsequent requests for the current plan.
+    ApprovedAll,
+}
+
+/// What the Engine asks the presentation layer to confirm.
+#[derive(Debug, Clone)]
+pub struct ConfirmRequest {
+    pub plan_id: Uuid,
+    pub action: CleanAction,
+    pub risk: RiskLevel,
+}
+
+/// Interface that L5 (presentation) implements so L4 (engine) can ask for
+/// confirmation without knowing which UI is active.
+///
+/// Uses manual `Pin<Box<dyn Future>>` return to remain `dyn`-compatible
+/// without the `async-trait` crate.
+pub trait Confirmer: Send + Sync {
+    fn ask<'a>(
+        &'a self,
+        req: ConfirmRequest,
+    ) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>>;
+}
+
+// ─── Scan tree ────────────────────────────────────────────────────────────────
+
+/// Slotmap key for a node in a `ScanTree`.
+pub type ScanKey = DefaultKey;
+
+/// A single node (file or directory) in a scanned directory tree.
+#[derive(Debug, Clone)]
+pub struct ScanNode {
+    pub path: Utf8PathBuf,
+    /// Recursive byte count (directory) or file size.
+    pub size: u64,
+    pub children: Vec<ScanKey>,
+    pub is_dir: bool,
+}
+
+/// Index-based directory tree produced by the filesystem scanner.
+#[derive(Debug, Default)]
+pub struct ScanTree {
+    pub nodes: SlotMap<ScanKey, ScanNode>,
+    pub root: Option<ScanKey>,
+}
