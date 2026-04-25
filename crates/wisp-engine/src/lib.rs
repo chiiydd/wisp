@@ -23,6 +23,23 @@ pub mod history;
 
 pub use wisp_cleaners::all_cleaners;
 
+// ─── Built-in confirmers ──────────────────────────────────────────────────────
+
+use std::pin::Pin;
+use std::future::Future;
+
+/// A `Confirmer` that approves every request automatically.
+pub struct AutoApproveConfirmer;
+
+impl wisp_core::types::Confirmer for AutoApproveConfirmer {
+    fn ask<'a>(
+        &'a self,
+        _req: ConfirmRequest,
+    ) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>> {
+        Box::pin(async { Confirmation::Approved })
+    }
+}
+
 // ─── Engine config ────────────────────────────────────────────────────────────
 
 /// Configuration supplied when creating an `Engine`.

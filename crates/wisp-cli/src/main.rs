@@ -53,7 +53,7 @@ async fn run(cli: cli::Cli) -> Result<i32> {
     let engine = Arc::new(wisp_engine::Engine::new(engine_cfg, distro));
 
     let code = match cli.command {
-        None | Some(cli::Command::Tui(_)) => dispatch_tui(),
+        None | Some(cli::Command::Tui(_)) => dispatch_tui().await?,
         Some(cli::Command::Clean(args)) => {
             dispatch_clean(args, &cli.global, engine).await?
         }
@@ -91,9 +91,11 @@ fn init_tracing(verbose: u8, quiet: bool, no_color: bool) -> Result<()> {
 
 // ─── tui ─────────────────────────────────────────────────────────────────────
 
-fn dispatch_tui() -> i32 {
-    eprintln!("TUI not yet implemented (Phase 6). Use `wisp clean` or `wisp analyze`.");
-    0
+async fn dispatch_tui() -> Result<i32> {
+    wisp_tui::run_tui()
+        .await
+        .map_err(|e| eyre!("{e}"))?;
+    Ok(0)
 }
 
 // ─── clean ───────────────────────────────────────────────────────────────────

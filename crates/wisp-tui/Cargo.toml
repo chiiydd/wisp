@@ -8,8 +8,19 @@ rust-version.workspace = true
 description  = "L5 – TUI presentation layer for wisp"
 
 [dependencies]
-wisp-core = { workspace = true }
-# wisp-engine, ratatui, crossterm, tokio added in Phase 6
+wisp-core     = { workspace = true }
+wisp-engine   = { workspace = true }
+wisp-cleaners = { workspace = true }
+wisp-platform = { workspace = true }
+ratatui       = { workspace = true }
+crossterm     = { workspace = true }
+tokio         = { workspace = true }
+tracing       = { workspace = true }
+camino        = { workspace = true }
+humansize     = { workspace = true }
+dirs          = { workspace = true }
+serde         = { workspace = true }
+serde_json    = { workspace = true }
 
 [lints]
 workspace = true
