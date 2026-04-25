@@ -45,7 +45,14 @@ pub async fn scan_directory(root: Utf8PathBuf, opts: ScanOptions) -> CoreResult<
 // ─── Blocking implementation ──────────────────────────────────────────────────
 
 fn scan_blocking(root: Utf8PathBuf, opts: ScanOptions) -> CoreResult<ScanTree> {
-    use jwalk::WalkDir;
+    use jwalk::{Parallelism, WalkDir};
+
+    // Dedicated rayon pool sized to CPU count — avoids contention with tokio's
+    // blocking threadpool and ensures full parallelism even when called from
+    // inside spawn_blocking.
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
     let mut tree = ScanTree::default();
     let mut path_to_key: HashMap<PathBuf, ScanKey> = HashMap::new();
@@ -54,6 +61,7 @@ fn scan_blocking(root: Utf8PathBuf, opts: ScanOptions) -> CoreResult<ScanTree> {
         .follow_links(opts.follow_symlinks)
         .skip_hidden(false)
         .sort(true)
+        .parallelism(Parallelism::RayonNewPool(n_threads))
     {
         let entry = match entry_result {
             Ok(e) => e,
