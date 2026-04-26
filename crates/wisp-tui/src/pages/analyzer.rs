@@ -98,7 +98,7 @@ impl CachedScan {
             })
             .collect();
 
-        entries.sort_by(|a, b| b.size.cmp(&a.size));
+        entries.sort_by_key(|e| std::cmp::Reverse(e.size));
         Some((entries, node.size))
     }
 

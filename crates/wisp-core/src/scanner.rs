@@ -129,7 +129,7 @@ pub fn top_entries(tree: &ScanTree, n: usize) -> Vec<(&Utf8PathBuf, u64, bool)> 
         .values()
         .map(|n| (&n.path, n.size, n.is_dir))
         .collect();
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.1));
     entries.truncate(n);
     entries
 }
@@ -190,7 +190,7 @@ fn fmt_node(
     }
 
     let mut children: Vec<ScanKey> = node.children.clone();
-    children.sort_by(|a, b| tree.nodes[*b].size.cmp(&tree.nodes[*a].size));
+    children.sort_by_key(|c| std::cmp::Reverse(tree.nodes[*c].size));
     let truncated = children.len() > max_children;
     children.truncate(max_children);
 

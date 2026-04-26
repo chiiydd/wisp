@@ -926,12 +926,12 @@ impl CleanerPage {
 
                 // Build top directories
                 let mut top_dirs: Vec<(String, u64)> = dir_map.into_iter().collect();
-                top_dirs.sort_by(|a, b| b.1.cmp(&a.1));
+                top_dirs.sort_by_key(|d| std::cmp::Reverse(d.1));
                 top_dirs.truncate(5);
 
                 // Build top categories
                 let mut top_cats: Vec<(&'static str, u64)> = cat_map.into_iter().collect();
-                top_cats.sort_by(|a, b| b.1.cmp(&a.1));
+                top_cats.sort_by_key(|c| std::cmp::Reverse(c.1));
                 top_cats.truncate(5);
                 // Drop "Other" if it is not the only category
                 if top_cats.len() > 1 {
