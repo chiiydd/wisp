@@ -539,11 +539,7 @@ impl CleanerPage {
 
         // ── Summary card ─────────────────────────────────────────────────
         let total = succeeded + failed + skipped;
-        let success_pct = if total > 0 {
-            succeeded * 100 / total
-        } else {
-            0
-        };
+        let success_pct = (succeeded * 100).checked_div(total).unwrap_or(0);
         let card_border_color = if failed == 0 {
             Theme::SUCCESS
         } else {

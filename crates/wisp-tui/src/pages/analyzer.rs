@@ -774,18 +774,14 @@ impl AnalyzerPage {
         }
 
         match k.code {
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !self.entries.is_empty() {
-                    let i = self.list_state.selected().unwrap_or(0);
-                    self.list_state.select(Some((i + 1) % self.entries.len()));
-                }
+            KeyCode::Down | KeyCode::Char('j') if !self.entries.is_empty() => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state.select(Some((i + 1) % self.entries.len()));
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if !self.entries.is_empty() {
-                    let i = self.list_state.selected().unwrap_or(0);
-                    self.list_state
-                        .select(Some(i.checked_sub(1).unwrap_or(self.entries.len() - 1)));
-                }
+            KeyCode::Up | KeyCode::Char('k') if !self.entries.is_empty() => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state
+                    .select(Some(i.checked_sub(1).unwrap_or(self.entries.len() - 1)));
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 if let Some(sel) = self.list_state.selected()

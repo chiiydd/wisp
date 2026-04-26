@@ -115,10 +115,8 @@ impl ConfirmDialog {
                 KeyCode::Backspace => {
                     self.input.pop();
                 }
-                KeyCode::Enter => {
-                    if self.input.trim() == "yes" {
-                        return ConfirmResult::Confirmed;
-                    }
+                KeyCode::Enter if self.input.trim() == "yes" => {
+                    return ConfirmResult::Confirmed;
                 }
                 KeyCode::Esc => return ConfirmResult::Cancelled,
                 _ => {}

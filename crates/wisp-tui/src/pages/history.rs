@@ -141,11 +141,7 @@ impl HistoryPage {
         };
 
         let total = entry.succeeded + entry.failed + entry.skipped;
-        let success_pct = if total > 0 {
-            entry.succeeded * 100 / total
-        } else {
-            0
-        };
+        let success_pct = (entry.succeeded * 100).checked_div(total).unwrap_or(0);
         let border_color = if entry.failed == 0 {
             Theme::SUCCESS
         } else {
@@ -226,23 +222,17 @@ impl HistoryPage {
 
     fn handle_list(&mut self, code: KeyCode) -> PageAction {
         match code {
-            KeyCode::Down | KeyCode::Char('j') => {
-                if !self.items.is_empty() {
-                    let i = self.list_state.selected().unwrap_or(0);
-                    self.list_state.select(Some((i + 1) % self.items.len()));
-                }
+            KeyCode::Down | KeyCode::Char('j') if !self.items.is_empty() => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state.select(Some((i + 1) % self.items.len()));
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if !self.items.is_empty() {
-                    let i = self.list_state.selected().unwrap_or(0);
-                    self.list_state
-                        .select(Some(i.checked_sub(1).unwrap_or(self.items.len() - 1)));
-                }
+            KeyCode::Up | KeyCode::Char('k') if !self.items.is_empty() => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state
+                    .select(Some(i.checked_sub(1).unwrap_or(self.items.len() - 1)));
             }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                if !self.items.is_empty() {
-                    self.view = HistView::Detail;
-                }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right if !self.items.is_empty() => {
+                self.view = HistView::Detail;
             }
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => return PageAction::Pop,
             _ => {}
@@ -252,18 +242,14 @@ impl HistoryPage {
 
     fn handle_detail(&mut self, code: KeyCode) -> PageAction {
         match code {
-            KeyCode::Down | KeyCode::Char('j') | KeyCode::Right => {
-                if !self.items.is_empty() {
-                    let i = self.list_state.selected().unwrap_or(0);
-                    self.list_state.select(Some((i + 1) % self.items.len()));
-                }
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Right if !self.items.is_empty() => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state.select(Some((i + 1) % self.items.len()));
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if !self.items.is_empty() {
-                    let i = self.list_state.selected().unwrap_or(0);
-                    self.list_state
-                        .select(Some(i.checked_sub(1).unwrap_or(self.items.len() - 1)));
-                }
+            KeyCode::Up | KeyCode::Char('k') if !self.items.is_empty() => {
+                let i = self.list_state.selected().unwrap_or(0);
+                self.list_state
+                    .select(Some(i.checked_sub(1).unwrap_or(self.items.len() - 1)));
             }
             KeyCode::Char('h')
             | KeyCode::Left
