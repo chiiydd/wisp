@@ -4,7 +4,9 @@
 //! Entry point: `run_tui()`.
 
 pub mod app;
+pub mod chrome;
 pub mod pages;
+pub mod theme;
 pub mod widgets;
 
 use std::sync::Arc;

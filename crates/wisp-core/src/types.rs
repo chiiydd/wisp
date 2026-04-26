@@ -189,6 +189,9 @@ pub struct CleanReport {
     pub failed: usize,
     pub skipped: usize,
     pub bytes_freed: u64,
+    /// Unix epoch seconds; 0 for records written before this field was added.
+    #[serde(default)]
+    pub timestamp: u64,
 }
 
 // ─── Output envelope ──────────────────────────────────────────────────────────

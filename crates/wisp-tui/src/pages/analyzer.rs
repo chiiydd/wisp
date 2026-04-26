@@ -9,19 +9,19 @@
 //! Every subsequent navigation (drill-down or back) is a pure HashMap lookup
 //! followed by iterating the children Vec — **zero I/O, O(1) per step**.
 //!
-//! A new scan is only started when the user navigates outside the cached
-//! root (rare) or presses `r` to force a rescan.
+//! ## Selection & deletion
 //!
-//! The scan itself runs in a dedicated rayon thread pool
-//! (`jwalk::Parallelism::RayonNewPool`) so it doesn't compete with tokio.
-//! Results arrive over an `mpsc` channel; `tick()` does a non-blocking
-//! `try_recv()` each frame.
+//! `Space` toggles a mark on the highlighted entry.  Marks are stored in a
+//! `HashSet<Utf8PathBuf>` and survive directory navigation.  `d` opens a
+//! Trash-confirmation; `D` opens a typed-yes Permanent-deletion confirm.
+//! On success the cache is pruned in-place and ancestor sizes are
+//! decremented — no full rescan needed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 use humansize::{DECIMAL, format_size};
 use ratatui::Frame;
@@ -31,11 +31,18 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph,
 };
+use uuid::Uuid;
 
 use wisp_core::CoreResult;
 use wisp_core::scanner::{ScanOptions, scan_directory};
-use wisp_core::types::{ScanKey, ScanTree};
+use wisp_core::types::{
+    CleanAction, CleanPlan, DeletionVia, Privileges, ProgressEvent, RiskLevel, ScanKey, ScanTree,
+};
 use wisp_engine::Engine;
+
+use crate::chrome::KeyHint;
+use crate::theme::Theme;
+use crate::widgets::confirm::{ConfirmDialog, ConfirmResult};
 
 use super::PageAction;
 
@@ -94,6 +101,46 @@ impl CachedScan {
         entries.sort_by(|a, b| b.size.cmp(&a.size));
         Some((entries, node.size))
     }
+
+    /// Remove `path` (and its entire subtree) from the cache.  Decrements
+    /// ancestor sizes by the deleted subtree's cached size.
+    ///
+    /// Returns the number of bytes removed, or `None` if the path is absent.
+    fn remove_subtree(&mut self, path: &Utf8Path) -> Option<u64> {
+        let key = *self.index.get(path)?;
+        let removed_size = self.tree.nodes[key].size;
+
+        // Detach from parent's children list
+        if let Some(parent) = path.parent() {
+            if let Some(&pk) = self.index.get(parent) {
+                self.tree.nodes[pk].children.retain(|&k| k != key);
+            }
+        }
+
+        // Drop the subtree's nodes + index entries
+        let mut stack = vec![key];
+        while let Some(k) = stack.pop() {
+            let (children, p) = match self.tree.nodes.get(k) {
+                Some(n) => (n.children.clone(), n.path.clone()),
+                None => continue,
+            };
+            stack.extend(children);
+            self.index.remove(&p);
+            self.tree.nodes.remove(k);
+        }
+
+        // Decrement ancestor sizes
+        let mut cur = path.parent();
+        while let Some(p) = cur {
+            if let Some(&k) = self.index.get(p) {
+                let node = &mut self.tree.nodes[k];
+                node.size = node.size.saturating_sub(removed_size);
+            }
+            cur = p.parent();
+        }
+
+        Some(removed_size)
+    }
 }
 
 // ─── ScanState ───────────────────────────────────────────────────────────────
@@ -106,10 +153,18 @@ enum ScanState {
     Error(String),
 }
 
+// ─── Pending deletion ────────────────────────────────────────────────────────
+
+struct PendingDelete {
+    /// Top-level paths to delete (already collapsed — no nested entries).
+    paths: Vec<(Utf8PathBuf, u64)>,
+    via: DeletionVia,
+    total: u64,
+}
+
 // ─── AnalyzerPage ────────────────────────────────────────────────────────────
 
 pub struct AnalyzerPage {
-    #[allow(dead_code)]
     engine: Arc<Engine>,
     /// Root used for the current scan.
     scan_root: Utf8PathBuf,
@@ -123,6 +178,17 @@ pub struct AnalyzerPage {
     list_state: ListState,
     total_size: u64,
     tick_count: usize,
+
+    /// Items marked for deletion (absolute paths).  Survives navigation.
+    marked: HashSet<Utf8PathBuf>,
+    /// Open confirmation dialog (Trash or Permanent).
+    confirm: Option<ConfirmDialog>,
+    /// Captured at confirm-open time so the dialog yes/no acts on a fixed set.
+    pending: Option<PendingDelete>,
+    /// True while a delete batch is executing — input is locked.
+    deleting: bool,
+    /// Last delete result line (e.g. "freed 4.2 GB", "2 failed").
+    last_result: Option<String>,
 }
 
 impl AnalyzerPage {
@@ -138,18 +204,20 @@ impl AnalyzerPage {
             list_state: ListState::default(),
             total_size: 0,
             tick_count: 0,
+            marked: HashSet::new(),
+            confirm: None,
+            pending: None,
+            deleting: false,
+            last_result: None,
         }
     }
 
     // ── Scan management ──────────────────────────────────────────────────────
 
-    /// Spawn a recursive background scan.  Non-blocking; result is polled by `tick()`.
     fn launch_scan(root: Utf8PathBuf) -> ScanState {
         let (tx, rx) = mpsc::channel::<CoreResult<ScanTree>>();
         std::thread::spawn(move || {
             let opts = ScanOptions { max_depth: None, min_size: None, follow_symlinks: false };
-            // Run inside a lightweight single-thread tokio runtime.  jwalk
-            // uses its own rayon pool so actual I/O is parallel.
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -159,7 +227,6 @@ impl AnalyzerPage {
         ScanState::Scanning(rx)
     }
 
-    /// Non-blocking poll; transitions to `Ready` when the scan completes.
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
 
@@ -197,33 +264,23 @@ impl AnalyzerPage {
 
     // ── Navigation ───────────────────────────────────────────────────────────
 
-    /// Enter a child directory — O(1) if already cached.
     fn navigate_into(&mut self, new_path: Utf8PathBuf) {
-        match &self.scan_state {
-            ScanState::Ready(cached) => {
-                if let Some((entries, total)) = cached.entries_for(&new_path) {
-                    self.nav_stack.push(self.current_path.clone());
-                    self.current_path = new_path;
-                    self.entries = entries;
-                    self.total_size = total;
-                    self.list_state
-                        .select(if self.entries.is_empty() { None } else { Some(0) });
-                    return;
-                }
-                // Path not in the cached tree — shouldn't happen with full-depth
-                // scan, but fall back to a fresh scan (e.g. mount-point appeared).
-                self.start_fresh_scan(new_path);
+        if let ScanState::Ready(cached) = &self.scan_state {
+            if let Some((entries, total)) = cached.entries_for(&new_path) {
+                self.nav_stack.push(self.current_path.clone());
+                self.current_path = new_path;
+                self.entries = entries;
+                self.total_size = total;
+                self.list_state
+                    .select(if self.entries.is_empty() { None } else { Some(0) });
+                return;
             }
-            // Still scanning — ignore navigation until ready
-            _ => {}
+            self.start_fresh_scan(new_path);
         }
     }
 
-    /// Go back to the previous directory — O(1) cache lookup.
-    /// Returns `Pop` if the nav stack is empty (exit the page).
     fn navigate_back(&mut self) -> PageAction {
         if let Some(prev) = self.nav_stack.pop() {
-            // prev is guaranteed to be inside the cached tree
             if let ScanState::Ready(cached) = &self.scan_state {
                 if let Some((entries, total)) = cached.entries_for(&prev) {
                     self.current_path = prev;
@@ -239,86 +296,101 @@ impl AnalyzerPage {
         }
     }
 
-    /// Force rescan of the current path (user pressed `r`).
     fn start_fresh_scan(&mut self, path: Utf8PathBuf) {
         self.nav_stack.clear();
         self.scan_root = path.clone();
         self.current_path = path.clone();
         self.entries.clear();
         self.total_size = 0;
+        self.marked.clear();
+        self.last_result = None;
         self.scan_state = Self::launch_scan(path);
+    }
+
+    /// Refresh the displayed entries from the cache for the current path.
+    fn refresh_view(&mut self) {
+        if let ScanState::Ready(cached) = &self.scan_state {
+            if let Some((entries, total)) = cached.entries_for(&self.current_path) {
+                self.entries = entries;
+                self.total_size = total;
+                let cur = self.list_state.selected().unwrap_or(0);
+                self.list_state.select(if self.entries.is_empty() {
+                    None
+                } else {
+                    Some(cur.min(self.entries.len() - 1))
+                });
+            }
+        }
+    }
+
+    // ── Mark management ──────────────────────────────────────────────────────
+
+    fn toggle_mark(&mut self, path: Utf8PathBuf) {
+        if !self.marked.remove(&path) {
+            self.marked.insert(path);
+        }
+    }
+
+    fn clear_marks(&mut self) {
+        self.marked.clear();
+    }
+
+    /// Total bytes covered by current marks (using cached sizes).
+    fn marked_total(&self) -> u64 {
+        let cached = match &self.scan_state {
+            ScanState::Ready(c) => c,
+            _ => return 0,
+        };
+        // De-dup nested marks before summing so /a + /a/b doesn't double-count.
+        let mut paths: Vec<&Utf8PathBuf> = self.marked.iter().collect();
+        paths.sort();
+        let mut total: u64 = 0;
+        let mut last: Option<&Utf8PathBuf> = None;
+        for p in paths {
+            if let Some(parent) = last {
+                if p.starts_with(parent) {
+                    continue;
+                }
+            }
+            if let Some(&k) = cached.index.get(p) {
+                total = total.saturating_add(cached.tree.nodes[k].size);
+            }
+            last = Some(p);
+        }
+        total
     }
 
     // ── Rendering ────────────────────────────────────────────────────────────
 
     pub fn render(&mut self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Min(1), Constraint::Length(2)])
-            .split(area);
-
-        // ── Breadcrumb ────────────────────────────────────────────────────
-        let scanning = matches!(self.scan_state, ScanState::Scanning(_));
-        let status = if scanning {
-            let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            let s = spinner_chars[self.tick_count % spinner_chars.len()];
-            format!(" {s} scanning…")
-        } else {
-            format!("  ({})", format_size(self.total_size, DECIMAL))
-        };
-
-        let breadcrumb = Paragraph::new(Line::from(vec![
-            Span::styled(" ", Style::default()),
-            Span::styled(
-                self.current_path.as_str().to_owned(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(status, Style::default().fg(Color::Yellow)),
-        ]))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(" Analyze "),
-        );
-        f.render_widget(breadcrumb, chunks[0]);
-
-        // ── Body ─────────────────────────────────────────────────────────
+        // Body fills the area; chrome (path, hints, mode) is rendered by `app`.
         match &self.scan_state {
             ScanState::Scanning(_) if self.entries.is_empty() => {
-                let msg = Paragraph::new(
-                    " Scanning recursively in background — results will appear automatically…",
-                )
-                .style(Style::default().fg(Color::DarkGray));
-                f.render_widget(msg, chunks[1]);
+                f.render_widget(
+                    Paragraph::new(
+                        " Scanning recursively in background — results will appear automatically…",
+                    )
+                    .style(Style::default().fg(Theme::MUTED)),
+                    area,
+                );
             }
             ScanState::Error(e) => {
                 let e = e.clone();
-                let msg = Paragraph::new(format!(" Error: {e}"))
-                    .style(Style::default().fg(Color::Red));
-                f.render_widget(msg, chunks[1]);
+                f.render_widget(
+                    Paragraph::new(format!(" Error: {e}"))
+                        .style(Style::default().fg(Theme::DANGER)),
+                    area,
+                );
             }
             _ => {
-                self.render_entries(f, chunks[1]);
+                self.render_entries(f, area);
             }
         }
 
-        // ── Footer ────────────────────────────────────────────────────────
-        let depth = self.nav_stack.len();
-        let back_hint = if depth > 0 {
-            format!(" h/← back ({depth} levels)  ")
-        } else {
-            "  h/← exit  ".into()
-        };
-        let footer = Paragraph::new(Line::from(vec![
-            Span::styled(
-                " j/↓ k/↑ move  Enter/l enter  ",
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(back_hint, Style::default().fg(Color::DarkGray)),
-            Span::styled(" r rescan  q quit ", Style::default().fg(Color::DarkGray)),
-        ]));
-        f.render_widget(footer, chunks[2]);
+        // Modal confirm dialog floats above everything else.
+        if let Some(dlg) = &self.confirm {
+            dlg.render(f, area);
+        }
     }
 
     fn render_entries(&mut self, f: &mut Frame, area: Rect) {
@@ -332,15 +404,19 @@ impl AnalyzerPage {
             .entries
             .iter()
             .map(|e| {
+                let marked = self.marked.contains(&e.path);
+                let mark_glyph = if marked { "● " } else { "  " };
+                let mark_style = Style::default().fg(Theme::MARK).add_modifier(Modifier::BOLD);
                 let size_str = format!("{:>10}", format_size(e.size, DECIMAL));
-                let mark = if e.is_dir { "/" } else { "" };
+                let suffix = if e.is_dir { "/" } else { "" };
                 ListItem::new(Line::from(vec![
-                    Span::styled(size_str, Style::default().fg(Color::Yellow)),
+                    Span::styled(mark_glyph, mark_style),
+                    Span::styled(size_str, Style::default().fg(Theme::WARNING)),
                     Span::raw("  "),
                     Span::styled(
-                        format!("{}{mark}", e.name),
+                        format!("{}{suffix}", e.name),
                         if e.is_dir {
-                            Style::default().fg(Color::Cyan)
+                            Style::default().fg(Theme::ACCENT)
                         } else {
                             Style::default()
                         },
@@ -350,19 +426,23 @@ impl AnalyzerPage {
             .collect();
 
         let count = self.entries.len();
+        let title = if self.marked.is_empty() {
+            format!(" {count} items ")
+        } else {
+            format!(" {count} items   ▣ {} marked ", self.marked.len())
+        };
         let list = List::new(items)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .title(format!(" {count} items ")),
+                    .border_style(Style::default().fg(Theme::ACCENT_DIM))
+                    .title(Span::styled(
+                        title,
+                        Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                    )),
             )
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .highlight_style(Theme::selection())
             .highlight_symbol("▶ ");
 
         f.render_stateful_widget(list, panes[0], &mut self.list_state);
@@ -372,7 +452,11 @@ impl AnalyzerPage {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" Size distribution ");
+            .border_style(Style::default().fg(Theme::ACCENT_DIM))
+            .title(Span::styled(
+                " Size distribution ",
+                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+            ));
         let inner = block.inner(bar_area);
         f.render_widget(block, bar_area);
 
@@ -395,8 +479,13 @@ impl AnalyzerPage {
                 width: inner.width,
                 height: 1,
             };
+            let bar_color = if self.marked.contains(&entry.path) {
+                Theme::MARK
+            } else {
+                Theme::ACCENT
+            };
             let gauge = Gauge::default()
-                .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
+                .gauge_style(Style::default().fg(bar_color).bg(Theme::MUTED))
                 .ratio(ratio.min(1.0))
                 .label(label);
             f.render_widget(gauge, gauge_rect);
@@ -406,10 +495,33 @@ impl AnalyzerPage {
     // ── Event handling ───────────────────────────────────────────────────────
 
     pub async fn handle_event(&mut self, evt: &Event) -> PageAction {
+        // 1. Confirm dialog intercepts everything when open.
+        if let Some(dlg) = &mut self.confirm {
+            match dlg.handle_event(evt) {
+                ConfirmResult::Confirmed => {
+                    self.confirm = None;
+                    self.execute_pending().await;
+                    return PageAction::None;
+                }
+                ConfirmResult::Cancelled => {
+                    self.confirm = None;
+                    self.pending = None;
+                    return PageAction::None;
+                }
+                ConfirmResult::Pending => return PageAction::None,
+            }
+        }
+
+        // 2. Lock input while a delete batch is running.
+        if self.deleting {
+            return PageAction::None;
+        }
+
         let Event::Key(k) = evt else { return PageAction::None };
         if k.kind != KeyEventKind::Press {
             return PageAction::None;
         }
+
         match k.code {
             KeyCode::Down | KeyCode::Char('j') => {
                 if !self.entries.is_empty() {
@@ -434,16 +546,324 @@ impl AnalyzerPage {
                     }
                 }
             }
+            KeyCode::Char(' ') => {
+                if let Some(sel) = self.list_state.selected() {
+                    if let Some(entry) = self.entries.get(sel) {
+                        let path = entry.path.clone();
+                        self.toggle_mark(path);
+                        self.last_result = None;
+                    }
+                }
+            }
+            KeyCode::Char('c') => {
+                self.clear_marks();
+            }
             KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
                 return self.navigate_back();
+            }
+            KeyCode::Char('d') => {
+                self.start_delete(DeletionVia::Trash);
+            }
+            KeyCode::Char('D') => {
+                self.start_delete(DeletionVia::Direct);
             }
             KeyCode::Char('r') => {
                 let root = self.scan_root.clone();
                 self.start_fresh_scan(root);
             }
-            KeyCode::Char('q') | KeyCode::Esc => return PageAction::Pop,
+            KeyCode::Esc => {
+                if !self.marked.is_empty() {
+                    self.clear_marks();
+                } else {
+                    return PageAction::Pop;
+                }
+            }
+            KeyCode::Char('q') => return PageAction::Pop,
             _ => {}
         }
         PageAction::None
     }
+
+    // ── Deletion ─────────────────────────────────────────────────────────────
+
+    /// Build the pending deletion set and open the appropriate confirm dialog.
+    fn start_delete(&mut self, via: DeletionVia) {
+        let cached = match &self.scan_state {
+            ScanState::Ready(c) => c,
+            _ => return,
+        };
+
+        // Collect target paths: marked items, or fall back to current selection.
+        let mut paths: Vec<Utf8PathBuf> = if !self.marked.is_empty() {
+            self.marked.iter().cloned().collect()
+        } else if let Some(sel) = self.list_state.selected() {
+            self.entries.get(sel).map(|e| vec![e.path.clone()]).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        if paths.is_empty() {
+            return;
+        }
+
+        // Drop nested entries: keep only the topmost ancestor.
+        paths.sort();
+        let mut collapsed: Vec<(Utf8PathBuf, u64)> = Vec::new();
+        let mut last: Option<Utf8PathBuf> = None;
+        for p in paths {
+            if let Some(parent) = &last {
+                if p.starts_with(parent) {
+                    continue;
+                }
+            }
+            let size = cached
+                .index
+                .get(&p)
+                .map(|&k| cached.tree.nodes[k].size)
+                .unwrap_or(0);
+            last = Some(p.clone());
+            collapsed.push((p, size));
+        }
+
+        let total: u64 = collapsed.iter().map(|(_, s)| *s).sum();
+        let count = collapsed.len();
+
+        let msg = match via {
+            DeletionVia::Trash => format!(
+                "Move {count} item{} to Trash ({})",
+                if count == 1 { "" } else { "s" },
+                format_size(total, DECIMAL),
+            ),
+            DeletionVia::Direct => format!(
+                "PERMANENTLY delete {count} item{} ({})\nThis cannot be undone.",
+                if count == 1 { "" } else { "s" },
+                format_size(total, DECIMAL),
+            ),
+        };
+
+        self.confirm = Some(ConfirmDialog::new(
+            msg,
+            matches!(via, DeletionVia::Direct),
+        ));
+        self.pending = Some(PendingDelete { paths: collapsed, via, total });
+    }
+
+    /// Execute the pending delete plan via the engine, then prune the cache.
+    async fn execute_pending(&mut self) {
+        let pending = match self.pending.take() {
+            Some(p) => p,
+            None => return,
+        };
+
+        self.deleting = true;
+        self.last_result = None;
+
+        let actions: Vec<CleanAction> = pending
+            .paths
+            .iter()
+            .map(|(p, sz)| CleanAction::Delete {
+                path: p.clone(),
+                size: *sz,
+                via: pending.via.clone(),
+            })
+            .collect();
+
+        let plan = CleanPlan {
+            id: Uuid::new_v4(),
+            actions,
+            estimated_size: pending.total,
+            required_privileges: Privileges { requires_root: false },
+            risk: match pending.via {
+                DeletionVia::Trash => RiskLevel::Safe,
+                DeletionVia::Direct => RiskLevel::Moderate,
+            },
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<ProgressEvent>(256);
+        let mut config = self.engine.config.clone();
+        // Direct deletion needs prefer_trash=false so the engine doesn't override it back to Trash.
+        config.prefer_trash = matches!(pending.via, DeletionVia::Trash);
+        config.dry_run = false;
+        let engine = Arc::new(Engine::new(config, Arc::clone(&self.engine.distro)));
+        let confirmer = Arc::new(wisp_engine::AutoApproveConfirmer);
+
+        let handle = tokio::spawn(async move { engine.execute(plan, confirmer, tx).await });
+
+        // Track which paths succeeded so we can prune the cache accurately.
+        let mut succeeded_idx: Vec<usize> = Vec::new();
+        let mut failed_idx: Vec<usize> = Vec::new();
+        while let Some(evt) = rx.recv().await {
+            if let ProgressEvent::ActionFinished { id, result } = evt {
+                let idx = id.0 as usize;
+                match result {
+                    wisp_core::types::ActionResult::Success { .. } => succeeded_idx.push(idx),
+                    wisp_core::types::ActionResult::Failed { .. } => failed_idx.push(idx),
+                    wisp_core::types::ActionResult::Skipped { .. } => failed_idx.push(idx),
+                }
+            }
+        }
+
+        let report = handle.await.ok().and_then(|r| r.ok());
+
+        // Prune cache for successful paths and clear their marks.
+        if let ScanState::Ready(cached) = &mut self.scan_state {
+            for &i in &succeeded_idx {
+                if let Some((p, _)) = pending.paths.get(i) {
+                    cached.remove_subtree(p);
+                    self.marked.remove(p);
+                }
+            }
+        }
+
+        // Failed marks are kept so the user can retry.
+        let result_text = match report {
+            Some(r) => {
+                if r.failed == 0 && r.skipped == 0 {
+                    format!(
+                        "✓ freed {} ({} item{})",
+                        format_size(r.bytes_freed, DECIMAL),
+                        r.succeeded,
+                        if r.succeeded == 1 { "" } else { "s" },
+                    )
+                } else {
+                    format!(
+                        "freed {} · {} ok · {} failed · {} skipped",
+                        format_size(r.bytes_freed, DECIMAL),
+                        r.succeeded,
+                        r.failed,
+                        r.skipped,
+                    )
+                }
+            }
+            None => "delete failed".to_owned(),
+        };
+        self.last_result = Some(result_text);
+
+        self.deleting = false;
+        self.refresh_view();
+    }
+
+    // ── Chrome contract ──────────────────────────────────────────────────────
+
+    pub fn mode(&self) -> (String, Color) {
+        if self.confirm.is_some() {
+            return ("CONFIRM".into(), Theme::MODE_DANGER);
+        }
+        if self.deleting {
+            return ("DELETING".into(), Theme::MODE_BUSY);
+        }
+        if matches!(self.scan_state, ScanState::Scanning(_)) {
+            return ("SCANNING".into(), Theme::MODE_BUSY);
+        }
+        if matches!(self.scan_state, ScanState::Error(_)) {
+            return ("ERROR".into(), Theme::MODE_DANGER);
+        }
+        if !self.marked.is_empty() {
+            return ("VISUAL".into(), Theme::MODE_DETAIL);
+        }
+        ("ANALYZE".into(), Theme::MODE_NORMAL)
+    }
+
+    pub fn context(&self) -> Vec<Span<'static>> {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
+        // Path
+        spans.push(Span::styled(
+            short_path(&self.current_path),
+            Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+        ));
+
+        // Spinner / total size
+        let busy = matches!(self.scan_state, ScanState::Scanning(_)) || self.deleting;
+        if busy {
+            let sp = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let s = sp[self.tick_count % sp.len()];
+            let label = if self.deleting { "deleting…" } else { "scanning…" };
+            spans.push(Span::styled(
+                format!("  {s} {label}"),
+                Style::default().fg(Theme::WARNING),
+            ));
+        } else if self.total_size > 0 {
+            spans.push(Span::styled(
+                format!("  · {}", format_size(self.total_size, DECIMAL)),
+                Style::default().fg(Theme::FG_DIM),
+            ));
+        }
+
+        // Marked count
+        if !self.marked.is_empty() {
+            let total = self.marked_total();
+            spans.push(Span::styled(
+                format!("  ·  ▣ {} ({})", self.marked.len(), format_size(total, DECIMAL)),
+                Style::default().fg(Theme::MARK).add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Last result (after a delete)
+        if self.marked.is_empty() {
+            if let Some(msg) = &self.last_result {
+                spans.push(Span::styled(
+                    format!("  ·  {}", msg),
+                    Style::default().fg(Theme::SUCCESS),
+                ));
+            }
+        }
+
+        // Nav depth indicator
+        let depth = self.nav_stack.len();
+        if depth > 0 {
+            spans.push(Span::styled(
+                format!("  ·  depth {depth}"),
+                Style::default().fg(Theme::MUTED),
+            ));
+        }
+
+        spans
+    }
+
+    pub fn hints(&self) -> Vec<KeyHint> {
+        // Confirm dialog overrides everything.
+        if self.confirm.is_some() {
+            // Distinguish typed vs y/n by checking whether input is needed
+            // — but we don't have direct access; show both keys as relevant.
+            return vec![
+                KeyHint::new("y/⏎", "confirm"),
+                KeyHint::new("Esc", "cancel"),
+            ];
+        }
+        if self.deleting {
+            return vec![KeyHint::new("…", "deleting")];
+        }
+        if matches!(self.scan_state, ScanState::Scanning(_)) && self.entries.is_empty() {
+            return vec![KeyHint::new("q", "back")];
+        }
+
+        let mut h = vec![
+            KeyHint::new("j/k", "move"),
+            KeyHint::new("⏎",   "open"),
+            KeyHint::new("⎵",   "mark"),
+        ];
+        if !self.marked.is_empty() {
+            h.push(KeyHint::new("d", "trash"));
+            h.push(KeyHint::new("D", "delete!"));
+            h.push(KeyHint::new("c", "clear"));
+        } else {
+            h.push(KeyHint::new("d", "trash"));
+        }
+        h.push(KeyHint::new("h", "back"));
+        h.push(KeyHint::new("r", "rescan"));
+        h.push(KeyHint::new("q", "quit"));
+        h
+    }
+}
+
+/// Display a path with `$HOME → ~`.
+fn short_path(p: &Utf8Path) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if !home.is_empty() {
+        if let Some(rel) = p.as_str().strip_prefix(&home) {
+            return format!("~{rel}");
+        }
+    }
+    p.to_string()
 }

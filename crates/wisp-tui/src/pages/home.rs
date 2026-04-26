@@ -1,4 +1,7 @@
 //! Main menu page.
+//!
+//! Body is just the centered menu list — top bar and statusline come from
+//! the app chrome (`crate::chrome`).
 
 use camino::Utf8PathBuf;
 use crossterm::event::{Event, KeyCode, KeyEventKind};
@@ -6,17 +9,36 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState};
+
+use crate::chrome::KeyHint;
+use crate::theme::Theme;
 
 use super::{CleanGroup, PageAction};
 
-const MENU_ITEMS: &[(&str, &str)] = &[
-    ("  Analyze", "Explore disk usage interactively"),
-    ("  Quick Clean (User)", "browser cache, trash, thumbnails"),
-    ("  Quick Clean (System)", "pacman cache, journal, orphans"),
-    ("  Quick Clean (Dev)", "cargo, npm, pip, go, docker"),
-    ("  History", "View past clean sessions"),
-    ("  Quit", "Exit wisp"),
+/// One row in the home menu — the action it triggers is attached so the
+/// activate logic doesn't depend on the row's index.
+struct MenuItem {
+    label:  &'static str,
+    desc:   &'static str,
+    action: MenuAction,
+}
+
+#[derive(Clone, Copy)]
+enum MenuAction {
+    Analyze,
+    Clean(CleanGroup),
+    History,
+    Quit,
+}
+
+const MENU_ITEMS: &[MenuItem] = &[
+    MenuItem { label: "Analyze",              desc: "Explore disk usage interactively",   action: MenuAction::Analyze },
+    MenuItem { label: "Quick Clean (User)",   desc: "browser cache · trash · thumbnails", action: MenuAction::Clean(CleanGroup::User) },
+    MenuItem { label: "Quick Clean (System)", desc: "pacman cache · journal · orphans",   action: MenuAction::Clean(CleanGroup::System) },
+    MenuItem { label: "Quick Clean (Dev)",    desc: "cargo · npm · pip · go · docker",    action: MenuAction::Clean(CleanGroup::Dev) },
+    MenuItem { label: "History",              desc: "View past clean sessions",           action: MenuAction::History },
+    MenuItem { label: "Quit",                 desc: "Exit wisp",                          action: MenuAction::Quit },
 ];
 
 pub struct HomePage {
@@ -31,42 +53,45 @@ impl HomePage {
     }
 
     pub fn render(&mut self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
+        // Centre the menu vertically; cap width.
+        let menu_h = (MENU_ITEMS.len() * 2 + 2) as u16;
+        let menu_w = 64u16.min(area.width.saturating_sub(4));
+        let pad_v  = area.height.saturating_sub(menu_h) / 2;
+        let pad_h  = (area.width.saturating_sub(menu_w)) / 2;
+
+        let v = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(5),  // title / banner
-                Constraint::Min(10),    // menu
-                Constraint::Length(2),  // footer
+                Constraint::Length(pad_v),
+                Constraint::Length(menu_h),
+                Constraint::Min(0),
             ])
             .split(area);
+        let h = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(pad_h),
+                Constraint::Length(menu_w),
+                Constraint::Min(0),
+            ])
+            .split(v[1]);
 
-        // ── Banner ──────────────────────────────────────────────────────────
-        let banner_lines = vec![
-            Line::from(Span::styled(
-                " wisp  – modern disk cleanup for Arch Linux",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                "  ↑/k  ↓/j  navigate    Enter  select    q  quit",
-                Style::default().fg(Color::DarkGray),
-            )),
-        ];
-        let banner = Paragraph::new(banner_lines).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .style(Style::default().fg(Color::Cyan)),
-        );
-        f.render_widget(banner, chunks[0]);
-
-        // ── Menu ─────────────────────────────────────────────────────────────
         let items: Vec<ListItem> = MENU_ITEMS
             .iter()
-            .map(|(label, desc)| {
-                ListItem::new(Line::from(vec![
-                    Span::styled(format!("{label:<28}"), Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(*desc, Style::default().fg(Color::DarkGray)),
-                ]))
+            .map(|item| {
+                ListItem::new(vec![
+                    Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(
+                            item.label.to_owned(),
+                            Style::default().add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled(item.desc, Style::default().fg(Theme::MUTED)),
+                    ]),
+                ])
             })
             .collect();
 
@@ -75,31 +100,16 @@ impl HomePage {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .title(" Main Menu "),
+                    .border_style(Style::default().fg(Theme::ACCENT_DIM))
+                    .title(Span::styled(
+                        " ✦ Main menu ",
+                        Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                    )),
             )
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .highlight_style(Theme::selection())
             .highlight_symbol("▶ ");
 
-        f.render_stateful_widget(list, chunks[1], &mut self.list_state);
-
-        // ── Footer ───────────────────────────────────────────────────────────
-        let footer = Paragraph::new(Line::from(vec![
-            Span::styled(" wisp ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled(
-                concat!("v", env!("CARGO_PKG_VERSION")),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                "   Ctrl-C / q to quit",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
-        f.render_widget(footer, chunks[2]);
+        f.render_stateful_widget(list, h[1], &mut self.list_state);
     }
 
     pub fn handle_event(&mut self, evt: &Event) -> PageAction {
@@ -118,9 +128,7 @@ impl HomePage {
                     i.checked_sub(1).unwrap_or(MENU_ITEMS.len() - 1),
                 ));
             }
-            KeyCode::Enter | KeyCode::Char('l') => {
-                return self.activate();
-            }
+            KeyCode::Enter | KeyCode::Char('l') => return self.activate(),
             KeyCode::Char('q') | KeyCode::Esc => return PageAction::Quit,
             _ => {}
         }
@@ -128,19 +136,47 @@ impl HomePage {
     }
 
     fn activate(&self) -> PageAction {
-        match self.list_state.selected().unwrap_or(0) {
-            0 => {
-                // Analyze home dir by default
+        let action = MENU_ITEMS
+            .get(self.list_state.selected().unwrap_or(0))
+            .map(|item| item.action)
+            .unwrap_or(MenuAction::Quit);
+        match action {
+            MenuAction::Analyze => {
                 let home = dirs::home_dir()
                     .and_then(|p| Utf8PathBuf::from_path_buf(p).ok())
                     .unwrap_or_else(|| Utf8PathBuf::from("/"));
                 PageAction::PushAnalyzer(home)
             }
-            1 => PageAction::PushCleaner(CleanGroup::User),
-            2 => PageAction::PushCleaner(CleanGroup::System),
-            3 => PageAction::PushCleaner(CleanGroup::Dev),
-            4 => PageAction::PushHistory,
-            _ => PageAction::Quit,
+            MenuAction::Clean(group) => PageAction::PushCleaner(group),
+            MenuAction::History      => PageAction::PushHistory,
+            MenuAction::Quit         => PageAction::Quit,
         }
+    }
+
+    // ── Chrome contract ──────────────────────────────────────────────────────
+
+    pub fn mode(&self) -> (String, Color) {
+        ("MENU".into(), Theme::MODE_NORMAL)
+    }
+
+    pub fn context(&self) -> Vec<Span<'static>> {
+        let label = MENU_ITEMS
+            .get(self.list_state.selected().unwrap_or(0))
+            .map(|item| item.label)
+            .unwrap_or("");
+        vec![
+            Span::styled(
+                label.to_owned(),
+                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+            ),
+        ]
+    }
+
+    pub fn hints(&self) -> Vec<KeyHint> {
+        vec![
+            KeyHint::new("j/k", "move"),
+            KeyHint::new("⏎",   "select"),
+            KeyHint::new("q",   "quit"),
+        ]
     }
 }

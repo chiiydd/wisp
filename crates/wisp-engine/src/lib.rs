@@ -215,12 +215,17 @@ impl Engine {
             }
         }
 
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let report = CleanReport {
             plan_id: plan.id,
             succeeded,
             failed,
             skipped,
             bytes_freed,
+            timestamp,
         };
 
         // Persist history entry

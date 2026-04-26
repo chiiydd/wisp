@@ -6,10 +6,12 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::Backend;
+use ratatui::layout::{Constraint, Direction, Layout};
 
 use wisp_core::CoreResult;
 use wisp_engine::Engine;
 
+use crate::chrome;
 use crate::pages::{Page, PageAction};
 
 pub struct App {
@@ -31,7 +33,28 @@ impl App {
         loop {
             terminal.draw(|f: &mut ratatui::Frame| {
                 if let Some(page) = self.page_stack.last_mut() {
-                    page.render(f, f.area());
+                    let area = f.area();
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Length(1), // title bar
+                            Constraint::Min(1),    // body
+                            Constraint::Length(1), // statusline
+                        ])
+                        .split(area);
+
+                    // Title bar (immutable borrow)
+                    let title = page.title();
+                    chrome::render_titlebar(f, chunks[0], title);
+
+                    // Body (mutable borrow)
+                    page.render(f, chunks[1]);
+
+                    // Statusline (immutable borrow, after render is done)
+                    let (mode, mode_color) = page.mode();
+                    let context = page.context();
+                    let hints = page.hints();
+                    chrome::render_statusline(f, chunks[2], &mode, mode_color, context, &hints);
                 }
             }).map_err(|e| wisp_core::CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
 
