@@ -6,11 +6,6 @@ license.workspace    = true
 repository.workspace = true
 rust-version.workspace = true
 description  = "L2 – Core types, FS abstractions and cross-cutting utilities for wisp"
-homepage     = "https://github.com/chiiydd/wisp"
-documentation = "https://docs.rs/wisp-core"
-readme       = "README.md"
-keywords     = ["disk", "cleanup", "filesystem", "trash", "scanner"]
-categories   = ["filesystem", "command-line-utilities"]
 
 [dependencies]
 wisp-platform = { workspace = true }

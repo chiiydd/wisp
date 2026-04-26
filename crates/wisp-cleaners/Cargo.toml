@@ -6,11 +6,6 @@ license.workspace    = true
 repository.workspace = true
 rust-version.workspace = true
 description  = "L3 – Cleaner implementations for wisp"
-homepage     = "https://github.com/chiiydd/wisp"
-documentation = "https://docs.rs/wisp-cleaners"
-readme       = "README.md"
-keywords     = ["disk", "cleanup", "pacman", "cache", "arch"]
-categories   = ["filesystem", "command-line-utilities"]
 
 [dependencies]
 wisp-core     = { workspace = true }

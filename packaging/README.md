@@ -23,32 +23,11 @@ packaging/
 
 Each is uploaded as `wisp-<version>-<target>.tar.gz` (with a `.sha256` sidecar) and contains the binary, README, CONTRIBUTING, generated man page, and shell completions.
 
-## crates.io
+## Distribution channels
 
-Three crates are published, in this order (each dependent waits for the previous to finish indexing):
+`wisp` ships via two channels, both anchored to GitHub Releases:
 
-1. `wisp-platform` (L1)
-2. `wisp-core` (L2, depends on `wisp-platform`)
-3. `wisp-cleaners` (L3, depends on both above)
+1. **AUR** — `wisp` (stable tarball) and `wisp-git` (VCS). See [aur/README.md](aur/README.md) for the push flow.
+2. **Pre-built tarball** — attached directly to each GitHub Release.
 
-`wisp-engine`, `wisp-tui`, `wisp-cli` are **not** published — they're tightly coupled to the workspace and the binary is distributed as an AUR package + GitHub release tarball instead.
-
-### Manual flow
-
-```sh
-# 1. Verify each crate packs cleanly. The first one needs no network deps.
-cargo package -p wisp-platform --no-verify
-
-# 2. Publish in order (the workflow does the same with 45s sleeps).
-cargo publish -p wisp-platform
-sleep 45  # let the index pick it up
-cargo publish -p wisp-core
-sleep 45
-cargo publish -p wisp-cleaners
-```
-
-### Via GitHub Actions
-
-The `Publish to crates.io` workflow (manual `workflow_dispatch`) runs the same flow with a `dry_run` toggle and a per-crate target. It needs `secrets.CARGO_REGISTRY_TOKEN`.
-
-> **Heads-up:** `wisp-core` may already exist on crates.io under another owner — check with `cargo search wisp-core` before publishing. If the name is taken, pick a unique prefix (e.g. `wispclean-core`) and update the manifests / `[workspace.dependencies]`.
+The library crates (`wisp-platform`, `wisp-core`, `wisp-cleaners`, `wisp-engine`, `wisp-tui`) are **not** published to crates.io; they're internal to the workspace and the only artifact is the `wisp` binary.

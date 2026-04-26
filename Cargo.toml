@@ -21,13 +21,12 @@ authors       = ["wisp contributors"]
 
 # ─── Workspace-wide dependencies ───────────────────────────────────────────────
 [workspace.dependencies]
-# Internal crates — `version` is required so the published manifest stays
-# usable when crates.io strips the `path = ...` line.
-wisp-core     = { path = "crates/wisp-core",     version = "0.1.0" }
-wisp-platform = { path = "crates/wisp-platform", version = "0.1.0" }
-wisp-cleaners = { path = "crates/wisp-cleaners", version = "0.1.0" }
-wisp-engine   = { path = "crates/wisp-engine",   version = "0.1.0" }
-wisp-tui      = { path = "crates/wisp-tui",      version = "0.1.0" }
+# Internal crates
+wisp-core     = { path = "crates/wisp-core" }
+wisp-platform = { path = "crates/wisp-platform" }
+wisp-cleaners = { path = "crates/wisp-cleaners" }
+wisp-engine   = { path = "crates/wisp-engine" }
+wisp-tui      = { path = "crates/wisp-tui" }
 
 # Error handling
 thiserror   = "2.0"
