@@ -5,7 +5,7 @@
 **现代化的 Linux 磁盘清理与分析工具**
 
 [![CI](https://github.com/chiiydd/wisp/actions/workflows/ci.yml/badge.svg)](https://github.com/chiiydd/wisp/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#许可证)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#许可证)
 [![MSRV](https://img.shields.io/badge/MSRV-1.90-orange)](rust-toolchain.toml)
 
 CLI + TUI 一体的磁盘清理工具：清 `pacman` 缓存、journal、孤儿包、浏览器缓存、回收站、开发缓存（cargo / npm / pip / go / docker），并提供带极坐标扇形图的交互式目录分析器。
@@ -136,7 +136,4 @@ CI 在每次 push / PR 上跑：fmt / clippy / test（stable / beta / MSRV 1.90�
 
 ## 许可证
 
-双协议授权，二选一：
-
-- Apache License 2.0（[LICENSE-APACHE](LICENSE-APACHE) 或 <https://www.apache.org/licenses/LICENSE-2.0>）
-- MIT license（[LICENSE-MIT](LICENSE-MIT) 或 <https://opensource.org/licenses/MIT>）
+[MIT License](LICENSE) · 详见 <https://opensource.org/licenses/MIT>

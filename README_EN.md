@@ -5,7 +5,7 @@
 **Modern disk cleanup & analysis for Linux**
 
 [![CI](https://github.com/chiiydd/wisp/actions/workflows/ci.yml/badge.svg)](https://github.com/chiiydd/wisp/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 [![MSRV](https://img.shields.io/badge/MSRV-1.90-orange)](rust-toolchain.toml)
 
 A fast CLI + TUI for finding and freeing disk space — `pacman` cache, journal, orphans, browser caches, trash, dev caches (cargo / npm / pip / go / docker), and an interactive directory analyzer with a polar sector chart.
@@ -136,9 +136,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the layering contract, command-extens
 
 ## License
 
-Dual-licensed under either of:
-
-- Apache License 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license       ([LICENSE-MIT](LICENSE-MIT)        or <https://opensource.org/licenses/MIT>)
-
-at your option.
+Licensed under the [MIT License](LICENSE) — see <https://opensource.org/licenses/MIT>.
