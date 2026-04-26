@@ -7,24 +7,34 @@ use camino::Utf8PathBuf;
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::{Distro, DistroKind};
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 // ─── Metadata ─────────────────────────────────────────────────────────────────
 
 struct PacmanMeta;
 
 impl CleanerMeta for PacmanMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("arch.pacman") }
-    fn name(&self) -> &str { "Pacman cache" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("arch.pacman")
+    }
+    fn name(&self) -> &str {
+        "Pacman cache"
+    }
     fn description(&self) -> &str {
         "Remove old package versions from /var/cache/pacman/pkg, keeping 2 per package."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Safe }
-    fn requires_root(&self) -> bool { true }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Safe
+    }
+    fn requires_root(&self) -> bool {
+        true
+    }
     fn supported_on(&self, distro: &dyn Distro) -> bool {
         distro.kind() == DistroKind::Arch
     }
-    fn group(&self) -> CleanerGroup { CleanerGroup::System }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::System
+    }
 }
 
 // ─── Plan ─────────────────────────────────────────────────────────────────────
@@ -61,7 +71,11 @@ async fn plan_via_paccache() -> wisp_core::CoreResult<Vec<CleanAction>> {
             let path = std::path::Path::new(p.trim());
             let size = path.metadata().map(|m| m.len()).unwrap_or(0);
             let utf8 = Utf8PathBuf::from_path_buf(path.to_owned()).ok()?;
-            Some(CleanAction::Delete { path: utf8, size, via: DeletionVia::Direct })
+            Some(CleanAction::Delete {
+                path: utf8,
+                size,
+                via: DeletionVia::Direct,
+            })
         })
         .collect();
     Ok(actions)
@@ -107,7 +121,11 @@ async fn plan_manual() -> wisp_core::CoreResult<Vec<CleanAction>> {
         // Keep the 2 newest; schedule the rest for deletion
         for (path, size) in files.into_iter().skip(2) {
             if let Ok(utf8) = Utf8PathBuf::from_path_buf(path) {
-                actions.push(CleanAction::Delete { path: utf8, size, via: DeletionVia::Direct });
+                actions.push(CleanAction::Delete {
+                    path: utf8,
+                    size,
+                    via: DeletionVia::Direct,
+                });
             }
         }
     }
@@ -154,8 +172,17 @@ mod tests {
 
     #[test]
     fn pkg_base_name_parses_correctly() {
-        assert_eq!(pkg_base_name("linux-6.9.0-1-x86_64.pkg.tar.zst"), Some("linux"));
-        assert_eq!(pkg_base_name("chromium-125.0.6422.60-1-x86_64.pkg.tar.zst"), Some("chromium"));
-        assert_eq!(pkg_base_name("python-3.12.3-1-x86_64.pkg.tar.zst"), Some("python"));
+        assert_eq!(
+            pkg_base_name("linux-6.9.0-1-x86_64.pkg.tar.zst"),
+            Some("linux")
+        );
+        assert_eq!(
+            pkg_base_name("chromium-125.0.6422.60-1-x86_64.pkg.tar.zst"),
+            Some("chromium")
+        );
+        assert_eq!(
+            pkg_base_name("python-3.12.3-1-x86_64.pkg.tar.zst"),
+            Some("python")
+        );
     }
 }

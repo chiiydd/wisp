@@ -27,12 +27,10 @@ use humansize::{DECIMAL, format_size};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
 use ratatui::symbols::Marker;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::canvas::{Canvas, Points};
-use ratatui::widgets::{
-    Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph,
-};
+use ratatui::widgets::{Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph};
 use uuid::Uuid;
 
 use wisp_core::CoreResult;
@@ -113,10 +111,10 @@ impl CachedScan {
         let removed_size = self.tree.nodes[key].size;
 
         // Detach from parent's children list
-        if let Some(parent) = path.parent() {
-            if let Some(&pk) = self.index.get(parent) {
-                self.tree.nodes[pk].children.retain(|&k| k != key);
-            }
+        if let Some(parent) = path.parent()
+            && let Some(&pk) = self.index.get(parent)
+        {
+            self.tree.nodes[pk].children.retain(|&k| k != key);
         }
 
         // Drop the subtree's nodes + index entries
@@ -175,13 +173,13 @@ enum VizMode {
 impl VizMode {
     fn next(self) -> Self {
         match self {
-            VizMode::Bars    => VizMode::Sectors,
+            VizMode::Bars => VizMode::Sectors,
             VizMode::Sectors => VizMode::Bars,
         }
     }
     fn label(self) -> &'static str {
         match self {
-            VizMode::Bars    => "bars",
+            VizMode::Bars => "bars",
             VizMode::Sectors => "sectors",
         }
     }
@@ -258,7 +256,12 @@ impl AnalyzerPage {
     fn launch_scan(root: Utf8PathBuf) -> ScanState {
         let (tx, rx) = mpsc::channel::<CoreResult<ScanTree>>();
         std::thread::spawn(move || {
-            let opts = ScanOptions { max_depth: None, min_size: None, follow_symlinks: false };
+            let opts = ScanOptions {
+                max_depth: None,
+                min_size: None,
+                follow_symlinks: false,
+            };
+            #[allow(clippy::expect_used)]
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -312,8 +315,11 @@ impl AnalyzerPage {
                 self.current_path = new_path;
                 self.entries = entries;
                 self.total_size = total;
-                self.list_state
-                    .select(if self.entries.is_empty() { None } else { Some(0) });
+                self.list_state.select(if self.entries.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
                 return;
             }
             self.start_fresh_scan(new_path);
@@ -322,14 +328,17 @@ impl AnalyzerPage {
 
     fn navigate_back(&mut self) -> PageAction {
         if let Some(prev) = self.nav_stack.pop() {
-            if let ScanState::Ready(cached) = &self.scan_state {
-                if let Some((entries, total)) = cached.entries_for(&prev) {
-                    self.current_path = prev;
-                    self.entries = entries;
-                    self.total_size = total;
-                    self.list_state
-                        .select(if self.entries.is_empty() { None } else { Some(0) });
-                }
+            if let ScanState::Ready(cached) = &self.scan_state
+                && let Some((entries, total)) = cached.entries_for(&prev)
+            {
+                self.current_path = prev;
+                self.entries = entries;
+                self.total_size = total;
+                self.list_state.select(if self.entries.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
             }
             PageAction::None
         } else {
@@ -350,17 +359,17 @@ impl AnalyzerPage {
 
     /// Refresh the displayed entries from the cache for the current path.
     fn refresh_view(&mut self) {
-        if let ScanState::Ready(cached) = &self.scan_state {
-            if let Some((entries, total)) = cached.entries_for(&self.current_path) {
-                self.entries = entries;
-                self.total_size = total;
-                let cur = self.list_state.selected().unwrap_or(0);
-                self.list_state.select(if self.entries.is_empty() {
-                    None
-                } else {
-                    Some(cur.min(self.entries.len() - 1))
-                });
-            }
+        if let ScanState::Ready(cached) = &self.scan_state
+            && let Some((entries, total)) = cached.entries_for(&self.current_path)
+        {
+            self.entries = entries;
+            self.total_size = total;
+            let cur = self.list_state.selected().unwrap_or(0);
+            self.list_state.select(if self.entries.is_empty() {
+                None
+            } else {
+                Some(cur.min(self.entries.len() - 1))
+            });
         }
     }
 
@@ -388,10 +397,10 @@ impl AnalyzerPage {
         let mut total: u64 = 0;
         let mut last: Option<&Utf8PathBuf> = None;
         for p in paths {
-            if let Some(parent) = last {
-                if p.starts_with(parent) {
-                    continue;
-                }
+            if let Some(parent) = last
+                && p.starts_with(parent)
+            {
+                continue;
             }
             if let Some(&k) = cached.index.get(p) {
                 total = total.saturating_add(cached.tree.nodes[k].size);
@@ -447,7 +456,9 @@ impl AnalyzerPage {
             .map(|e| {
                 let marked = self.marked.contains(&e.path);
                 let mark_glyph = if marked { "● " } else { "  " };
-                let mark_style = Style::default().fg(Theme::MARK).add_modifier(Modifier::BOLD);
+                let mark_style = Style::default()
+                    .fg(Theme::MARK)
+                    .add_modifier(Modifier::BOLD);
                 let size_str = format!("{:>10}", format_size(e.size, DECIMAL));
                 let suffix = if e.is_dir { "/" } else { "" };
                 ListItem::new(Line::from(vec![
@@ -480,7 +491,9 @@ impl AnalyzerPage {
                     .border_style(Style::default().fg(Theme::ACCENT_DIM))
                     .title(Span::styled(
                         title,
-                        Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Theme::ACCENT)
+                            .add_modifier(Modifier::BOLD),
                     )),
             )
             .highlight_style(Theme::selection())
@@ -491,7 +504,7 @@ impl AnalyzerPage {
         // ── Right: visualization (bars or sectors) ───────────────────────
         let viz_area = panes[1];
         let title = match self.viz_mode {
-            VizMode::Bars    => " Size distribution ",
+            VizMode::Bars => " Size distribution ",
             VizMode::Sectors => " Polar sectors ",
         };
         let block = Block::default()
@@ -500,7 +513,9 @@ impl AnalyzerPage {
             .border_style(Style::default().fg(Theme::ACCENT_DIM))
             .title(Span::styled(
                 title.to_owned(),
-                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(viz_area);
         f.render_widget(block, viz_area);
@@ -510,7 +525,7 @@ impl AnalyzerPage {
         }
 
         match self.viz_mode {
-            VizMode::Bars    => self.render_bars(f, inner),
+            VizMode::Bars => self.render_bars(f, inner),
             VizMode::Sectors => self.render_sectors(f, inner),
         }
     }
@@ -560,35 +575,34 @@ impl AnalyzerPage {
     ///   • Center text shows the selected entry's name, size, and %.
     fn render_sectors(&self, f: &mut Frame, inner: Rect) {
         struct Wedge {
-            frac:       f64,
+            frac: f64,
             base_color: Color,
-            marked:     bool,
-            is_sel:     bool,
+            marked: bool,
+            is_sel: bool,
         }
 
         let selected = self.list_state.selected();
         let total = self.total_size as f64;
 
-        let mut wedges: Vec<Wedge> = self
+        let wedges: Vec<Wedge> = self
             .entries
             .iter()
             .enumerate()
             .map(|(i, e)| Wedge {
-                frac:       e.size as f64 / total,
+                frac: e.size as f64 / total,
                 base_color: SECTOR_PALETTE[i % SECTOR_PALETTE.len()],
-                marked:     self.marked.contains(&e.path),
-                is_sel:     selected == Some(i),
+                marked: self.marked.contains(&e.path),
+                is_sel: selected == Some(i),
             })
             .filter(|w| w.frac > 0.0005)
             .collect();
 
         // Pre-compute centre-label strings.  Done here so the closure only
         // captures small owned values.
-        let center: Option<(String, String, String)> = selected
-            .and_then(|i| self.entries.get(i))
-            .map(|e| {
+        let center: Option<(String, String, String)> =
+            selected.and_then(|i| self.entries.get(i)).map(|e| {
                 let suffix = if e.is_dir { "/" } else { "" };
-                let pct    = (e.size as f64 / total * 100.0).round() as u32;
+                let pct = (e.size as f64 / total * 100.0).round() as u32;
                 (
                     format!("{}{suffix}", e.name),
                     format_size(e.size, DECIMAL),
@@ -608,10 +622,10 @@ impl AnalyzerPage {
             .x_bounds([-1.0, 1.0])
             .y_bounds([-1.0, 1.0])
             .paint(move |ctx| {
-                const INNER_R:           f64 = 0.42;
-                const OUTER_R_DEFAULT:   f64 = 0.86;
-                const OUTER_R_SELECTED:  f64 = 0.96;
-                const EXPLODE:           f64 = 0.08;
+                const INNER_R: f64 = 0.42;
+                const OUTER_R_DEFAULT: f64 = 0.86;
+                const OUTER_R_SELECTED: f64 = 0.96;
+                const EXPLODE: f64 = 0.08;
 
                 let mut start = -std::f64::consts::FRAC_PI_2;
                 let mut boundaries: Vec<f64> = Vec::with_capacity(wedges.len() + 1);
@@ -636,7 +650,11 @@ impl AnalyzerPage {
                     } else {
                         (0.0, 0.0)
                     };
-                    let outer_r = if w.is_sel { OUTER_R_SELECTED } else { OUTER_R_DEFAULT };
+                    let outer_r = if w.is_sel {
+                        OUTER_R_SELECTED
+                    } else {
+                        OUTER_R_DEFAULT
+                    };
 
                     let color = if w.is_sel {
                         Color::White
@@ -646,7 +664,7 @@ impl AnalyzerPage {
                         w.base_color
                     };
 
-                    let n_radial  = 14usize;
+                    let n_radial = 14usize;
                     let n_angular = ((w.frac * 280.0) as usize).max(3);
                     let mut pts: Vec<(f64, f64)> =
                         Vec::with_capacity((n_radial + 1) * (n_angular + 1));
@@ -658,7 +676,10 @@ impl AnalyzerPage {
                             pts.push((ox + r * ca, oy + r * sa));
                         }
                     }
-                    ctx.draw(&Points { coords: &pts, color });
+                    ctx.draw(&Points {
+                        coords: &pts,
+                        color,
+                    });
                     start = end;
                 }
 
@@ -680,7 +701,10 @@ impl AnalyzerPage {
                                 + (OUTER_R_DEFAULT - INNER_R) * (ri as f64) / (n_pts as f64);
                             line_pts.push((r * ca, r * sa));
                         }
-                        ctx.draw(&Points { coords: &line_pts, color: Color::Black });
+                        ctx.draw(&Points {
+                            coords: &line_pts,
+                            color: Color::Black,
+                        });
                     }
                 }
 
@@ -742,7 +766,9 @@ impl AnalyzerPage {
             return PageAction::None;
         }
 
-        let Event::Key(k) = evt else { return PageAction::None };
+        let Event::Key(k) = evt else {
+            return PageAction::None;
+        };
         if k.kind != KeyEventKind::Press {
             return PageAction::None;
         }
@@ -762,22 +788,21 @@ impl AnalyzerPage {
                 }
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                if let Some(sel) = self.list_state.selected() {
-                    if let Some(entry) = self.entries.get(sel) {
-                        if entry.is_dir {
-                            let path = entry.path.clone();
-                            self.navigate_into(path);
-                        }
-                    }
+                if let Some(sel) = self.list_state.selected()
+                    && let Some(entry) = self.entries.get(sel)
+                    && entry.is_dir
+                {
+                    let path = entry.path.clone();
+                    self.navigate_into(path);
                 }
             }
             KeyCode::Char(' ') => {
-                if let Some(sel) = self.list_state.selected() {
-                    if let Some(entry) = self.entries.get(sel) {
-                        let path = entry.path.clone();
-                        self.toggle_mark(path);
-                        self.last_result = None;
-                    }
+                if let Some(sel) = self.list_state.selected()
+                    && let Some(entry) = self.entries.get(sel)
+                {
+                    let path = entry.path.clone();
+                    self.toggle_mark(path);
+                    self.last_result = None;
                 }
             }
             KeyCode::Char('c') => {
@@ -825,7 +850,10 @@ impl AnalyzerPage {
         let mut paths: Vec<Utf8PathBuf> = if !self.marked.is_empty() {
             self.marked.iter().cloned().collect()
         } else if let Some(sel) = self.list_state.selected() {
-            self.entries.get(sel).map(|e| vec![e.path.clone()]).unwrap_or_default()
+            self.entries
+                .get(sel)
+                .map(|e| vec![e.path.clone()])
+                .unwrap_or_default()
         } else {
             Vec::new()
         };
@@ -839,10 +867,10 @@ impl AnalyzerPage {
         let mut collapsed: Vec<(Utf8PathBuf, u64)> = Vec::new();
         let mut last: Option<Utf8PathBuf> = None;
         for p in paths {
-            if let Some(parent) = &last {
-                if p.starts_with(parent) {
-                    continue;
-                }
+            if let Some(parent) = &last
+                && p.starts_with(parent)
+            {
+                continue;
             }
             let size = cached
                 .index
@@ -869,11 +897,12 @@ impl AnalyzerPage {
             ),
         };
 
-        self.confirm = Some(ConfirmDialog::new(
-            msg,
-            matches!(via, DeletionVia::Direct),
-        ));
-        self.pending = Some(PendingDelete { paths: collapsed, via, total });
+        self.confirm = Some(ConfirmDialog::new(msg, matches!(via, DeletionVia::Direct)));
+        self.pending = Some(PendingDelete {
+            paths: collapsed,
+            via,
+            total,
+        });
     }
 
     /// Execute the pending delete plan via the engine, then prune the cache.
@@ -900,7 +929,9 @@ impl AnalyzerPage {
             id: Uuid::new_v4(),
             actions,
             estimated_size: pending.total,
-            required_privileges: Privileges { requires_root: false },
+            required_privileges: Privileges {
+                requires_root: false,
+            },
             risk: match pending.via {
                 DeletionVia::Trash => RiskLevel::Safe,
                 DeletionVia::Direct => RiskLevel::Moderate,
@@ -998,7 +1029,9 @@ impl AnalyzerPage {
         // Path
         spans.push(Span::styled(
             short_path(&self.current_path),
-            Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
         ));
 
         // Spinner / total size
@@ -1006,7 +1039,11 @@ impl AnalyzerPage {
         if busy {
             let sp = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             let s = sp[self.tick_count % sp.len()];
-            let label = if self.deleting { "deleting…" } else { "scanning…" };
+            let label = if self.deleting {
+                "deleting…"
+            } else {
+                "scanning…"
+            };
             spans.push(Span::styled(
                 format!("  {s} {label}"),
                 Style::default().fg(Theme::WARNING),
@@ -1022,19 +1059,25 @@ impl AnalyzerPage {
         if !self.marked.is_empty() {
             let total = self.marked_total();
             spans.push(Span::styled(
-                format!("  ·  ▣ {} ({})", self.marked.len(), format_size(total, DECIMAL)),
-                Style::default().fg(Theme::MARK).add_modifier(Modifier::BOLD),
+                format!(
+                    "  ·  ▣ {} ({})",
+                    self.marked.len(),
+                    format_size(total, DECIMAL)
+                ),
+                Style::default()
+                    .fg(Theme::MARK)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 
         // Last result (after a delete)
-        if self.marked.is_empty() {
-            if let Some(msg) = &self.last_result {
-                spans.push(Span::styled(
-                    format!("  ·  {}", msg),
-                    Style::default().fg(Theme::SUCCESS),
-                ));
-            }
+        if self.marked.is_empty()
+            && let Some(msg) = &self.last_result
+        {
+            spans.push(Span::styled(
+                format!("  ·  {}", msg),
+                Style::default().fg(Theme::SUCCESS),
+            ));
         }
 
         // Nav depth indicator
@@ -1074,8 +1117,8 @@ impl AnalyzerPage {
 
         let mut h = vec![
             KeyHint::new("j/k", "move"),
-            KeyHint::new("⏎",   "open"),
-            KeyHint::new("⎵",   "mark"),
+            KeyHint::new("⏎", "open"),
+            KeyHint::new("⎵", "mark"),
         ];
         if !self.marked.is_empty() {
             h.push(KeyHint::new("d", "trash"));
@@ -1095,10 +1138,10 @@ impl AnalyzerPage {
 /// Display a path with `$HOME → ~`.
 fn short_path(p: &Utf8Path) -> String {
     let home = std::env::var("HOME").unwrap_or_default();
-    if !home.is_empty() {
-        if let Some(rel) = p.as_str().strip_prefix(&home) {
-            return format!("~{rel}");
-        }
+    if !home.is_empty()
+        && let Some(rel) = p.as_str().strip_prefix(&home)
+    {
+        return format!("~{rel}");
     }
     p.to_string()
 }

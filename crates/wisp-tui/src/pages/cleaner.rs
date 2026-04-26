@@ -41,7 +41,12 @@ enum RunState {
     Planned,
     ConfirmDangerous,
     Running,
-    Done { freed: u64, succeeded: usize, failed: usize, skipped: usize },
+    Done {
+        freed: u64,
+        succeeded: usize,
+        failed: usize,
+        skipped: usize,
+    },
     Error(String),
 }
 
@@ -65,7 +70,7 @@ impl LogEntry {
     fn style(&self) -> Style {
         match self.kind {
             LogKind::Success => Style::default().fg(Color::Green),
-            LogKind::Failed  => Style::default().fg(Color::Red),
+            LogKind::Failed => Style::default().fg(Color::Red),
             LogKind::Skipped => Style::default().fg(Color::DarkGray),
             LogKind::Warning => Style::default().fg(Color::Yellow),
         }
@@ -74,7 +79,7 @@ impl LogEntry {
     fn prefix(&self) -> &'static str {
         match self.kind {
             LogKind::Success => "✓ ",
-            LogKind::Failed  => "✗ ",
+            LogKind::Failed => "✗ ",
             LogKind::Skipped => "– ",
             LogKind::Warning => "⚠ ",
         }
@@ -98,11 +103,15 @@ fn dir_group(path: &Utf8Path, depth: usize) -> String {
     let is_abs = s.starts_with('/');
     let parts: Vec<&str> = s.trim_start_matches('/').splitn(depth + 1, '/').collect();
     let taken: Vec<&str> = parts.iter().take(depth).copied().collect();
-    let result = if is_abs { format!("/{}", taken.join("/")) } else { taken.join("/") };
-    if !home.is_empty() {
-        if let Some(rel) = result.strip_prefix(&home) {
-            return format!("~{rel}");
-        }
+    let result = if is_abs {
+        format!("/{}", taken.join("/"))
+    } else {
+        taken.join("/")
+    };
+    if !home.is_empty()
+        && let Some(rel) = result.strip_prefix(&home)
+    {
+        return format!("~{rel}");
     }
     result
 }
@@ -111,9 +120,15 @@ fn dir_group(path: &Utf8Path, depth: usize) -> String {
 fn categorize_path(path: &Utf8Path) -> &'static str {
     let lc = path.as_str().to_lowercase();
     let ext = path.extension().map(str::to_lowercase).unwrap_or_default();
-    if lc.contains("/trash") || lc.contains(".trash") { return "Trash"; }
-    if lc.contains(".cache") || lc.contains("/cache") { return "Cache"; }
-    if lc.contains("/log") || ext == "log" { return "Logs"; }
+    if lc.contains("/trash") || lc.contains(".trash") {
+        return "Trash";
+    }
+    if lc.contains(".cache") || lc.contains("/cache") {
+        return "Cache";
+    }
+    if lc.contains("/log") || ext == "log" {
+        return "Logs";
+    }
     match ext.as_str() {
         "jpg" | "jpeg" | "png" | "gif" | "webp" | "svg" | "bmp" | "ico" | "tiff" => "Images",
         "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" => "Videos",
@@ -127,10 +142,10 @@ fn categorize_path(path: &Utf8Path) -> &'static str {
 /// Shorten `path` by replacing `$HOME` with `~`.
 fn short_path(path: &Utf8Path) -> String {
     let home = std::env::var("HOME").unwrap_or_default();
-    if !home.is_empty() {
-        if let Some(rel) = path.as_str().strip_prefix(&home) {
-            return format!("~{rel}");
-        }
+    if !home.is_empty()
+        && let Some(rel) = path.as_str().strip_prefix(&home)
+    {
+        return format!("~{rel}");
     }
     path.to_string()
 }
@@ -138,7 +153,9 @@ fn short_path(path: &Utf8Path) -> String {
 /// Truncate a string to `max` chars, preserving the tail with an ellipsis.
 fn truncate_tail(s: &str, max: usize) -> String {
     let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max { return s.to_owned(); }
+    if chars.len() <= max {
+        return s.to_owned();
+    }
     let keep = max.saturating_sub(1);
     let tail: String = chars[chars.len() - keep..].iter().collect();
     format!("…{tail}")
@@ -165,8 +182,8 @@ pub struct CleanerPage {
 /// Idle-state action menu.  The action kind is attached so dispatch
 /// doesn't depend on row index.
 struct IdleItem {
-    label:  &'static str,
-    desc:   &'static str,
+    label: &'static str,
+    desc: &'static str,
     action: IdleAction,
 }
 
@@ -178,9 +195,21 @@ enum IdleAction {
 }
 
 const IDLE_ACTIONS: &[IdleItem] = &[
-    IdleItem { label: "Preview",      desc: "dry-run · nothing is deleted",     action: IdleAction::Preview },
-    IdleItem { label: "Run now",      desc: "build plan & execute immediately", action: IdleAction::Run },
-    IdleItem { label: "Back to menu", desc: "return without changes",           action: IdleAction::Back },
+    IdleItem {
+        label: "Preview",
+        desc: "dry-run · nothing is deleted",
+        action: IdleAction::Preview,
+    },
+    IdleItem {
+        label: "Run now",
+        desc: "build plan & execute immediately",
+        action: IdleAction::Run,
+    },
+    IdleItem {
+        label: "Back to menu",
+        desc: "return without changes",
+        action: IdleAction::Back,
+    },
 ];
 
 /// Maximum number of plan actions rendered in the preview list.  Above this
@@ -216,7 +245,7 @@ impl CleanerPage {
         match &self.run_state {
             RunState::Idle => self.render_idle(f, area),
             RunState::Building => {
-                let sp = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+                let sp = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let s = sp[self.tick_count % sp.len()];
                 f.render_widget(
                     Paragraph::new(format!(" {s} Building plan…"))
@@ -226,14 +255,19 @@ impl CleanerPage {
             }
             RunState::Planned | RunState::ConfirmDangerous => {
                 self.render_plan(f, area);
-                if matches!(self.run_state, RunState::ConfirmDangerous) {
-                    if let Some(dlg) = &self.confirm_dialog {
-                        dlg.render(f, area);
-                    }
+                if matches!(self.run_state, RunState::ConfirmDangerous)
+                    && let Some(dlg) = &self.confirm_dialog
+                {
+                    dlg.render(f, area);
                 }
             }
             RunState::Running => self.render_log(f, area, true),
-            RunState::Done { freed, succeeded, failed, skipped } => {
+            RunState::Done {
+                freed,
+                succeeded,
+                failed,
+                skipped,
+            } => {
                 let (freed, succeeded, failed, skipped) = (*freed, *succeeded, *failed, *skipped);
                 self.render_done(f, area, freed, succeeded, failed, skipped);
             }
@@ -263,34 +297,32 @@ impl CleanerPage {
         // ── Left: what will be cleaned ────────────────────────────────────
         let cleaners: &[(&str, &str)] = match &self.group {
             CleanGroup::User => &[
-                ("Trash can",         "~/.local/share/Trash"),
-                ("Browser cache",     "Chromium · Firefox · Brave"),
-                ("Thumbnail cache",   "~/.cache/thumbnails"),
-                ("Flatpak runtimes",  "unused versions"),
+                ("Trash can", "~/.local/share/Trash"),
+                ("Browser cache", "Chromium · Firefox · Brave"),
+                ("Thumbnail cache", "~/.cache/thumbnails"),
+                ("Flatpak runtimes", "unused versions"),
             ],
             CleanGroup::System => &[
-                ("Pacman cache",      "/var/cache/pacman/pkg"),
-                ("Systemd journal",   "/var/log/journal"),
-                ("Orphan packages",   "pacman -Qtdq"),
-                ("Temporary files",   "/tmp"),
+                ("Pacman cache", "/var/cache/pacman/pkg"),
+                ("Systemd journal", "/var/log/journal"),
+                ("Orphan packages", "pacman -Qtdq"),
+                ("Temporary files", "/tmp"),
             ],
             CleanGroup::Dev => &[
-                ("Cargo registry",    "~/.cargo/registry"),
-                ("npm cache",         "~/.npm"),
-                ("pip cache",         "~/.cache/pip"),
-                ("Go module cache",   "~/go/pkg/mod"),
-                ("Docker",            "dangling images & build cache"),
+                ("Cargo registry", "~/.cargo/registry"),
+                ("npm cache", "~/.npm"),
+                ("pip cache", "~/.cache/pip"),
+                ("Go module cache", "~/go/pkg/mod"),
+                ("Docker", "dangling images & build cache"),
             ],
-            CleanGroup::All => &[
-                ("All cleaners",      "@user + @system + @dev"),
-            ],
+            CleanGroup::All => &[("All cleaners", "@user + @system + @dev")],
         };
 
         let group_label = match &self.group {
-            CleanGroup::User   => "User",
+            CleanGroup::User => "User",
             CleanGroup::System => "System",
-            CleanGroup::Dev    => "Dev",
-            CleanGroup::All    => "All",
+            CleanGroup::Dev => "Dev",
+            CleanGroup::All => "All",
         };
 
         let cleaner_items: Vec<ListItem> = cleaners
@@ -305,17 +337,18 @@ impl CleanerPage {
             .collect();
 
         f.render_widget(
-            List::new(cleaner_items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_type(BorderType::Rounded)
-                        .border_style(Style::default().fg(Theme::ACCENT_DIM))
-                        .title(Span::styled(
-                            format!(" {group_label} cleaners "),
-                            Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
-                        )),
-                ),
+            List::new(cleaner_items).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(Theme::ACCENT_DIM))
+                    .title(Span::styled(
+                        format!(" {group_label} cleaners "),
+                        Style::default()
+                            .fg(Theme::ACCENT)
+                            .add_modifier(Modifier::BOLD),
+                    )),
+            ),
             panes[0],
         );
 
@@ -347,7 +380,9 @@ impl CleanerPage {
                     .border_style(Style::default().fg(Theme::ACCENT_DIM))
                     .title(Span::styled(
                         " Actions ",
-                        Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Theme::ACCENT)
+                            .add_modifier(Modifier::BOLD),
                     )),
             )
             .highlight_style(Theme::selection())
@@ -371,7 +406,10 @@ impl CleanerPage {
             .map(|a: &CleanAction| {
                 let (label, size) = match a {
                     CleanAction::Delete { path, size, .. } => (path.as_str().to_owned(), *size),
-                    CleanAction::RunExternal { cmd, estimated_size } => (
+                    CleanAction::RunExternal {
+                        cmd,
+                        estimated_size,
+                    } => (
                         format!("{} {}", cmd.program, cmd.args.join(" ")),
                         estimated_size.unwrap_or(0),
                     ),
@@ -418,12 +456,16 @@ impl CleanerPage {
             .border_style(Style::default().fg(Theme::ACCENT_DIM))
             .title(Span::styled(
                 title,
-                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        if inner.height == 0 { return; }
+        if inner.height == 0 {
+            return;
+        }
         let vis = inner.height as usize;
         let total = self.log.len();
 
@@ -457,15 +499,23 @@ impl CleanerPage {
     }
 
     fn render_done(
-        &mut self, f: &mut Frame, area: Rect,
-        freed: u64, succeeded: usize, failed: usize, skipped: usize,
+        &mut self,
+        f: &mut Frame,
+        area: Rect,
+        freed: u64,
+        succeeded: usize,
+        failed: usize,
+        skipped: usize,
     ) {
-        let has_breakdown = self.done_summary.as_ref()
+        let has_breakdown = self
+            .done_summary
+            .as_ref()
             .map(|s| !s.top_dirs.is_empty() || !s.top_cats.is_empty())
             .unwrap_or(false);
 
         let breakdown_rows = if has_breakdown {
-            self.done_summary.as_ref()
+            self.done_summary
+                .as_ref()
                 .map(|s| s.top_dirs.len().max(s.top_cats.len()).min(5))
                 .unwrap_or(0)
         } else {
@@ -473,7 +523,12 @@ impl CleanerPage {
         };
 
         // border(2) + blank(1) + freed(1) + counts(1) + [blank(1) + header(1) + rows]
-        let summary_h = 5u16 + if has_breakdown { 2 + breakdown_rows as u16 } else { 0 };
+        let summary_h = 5u16
+            + if has_breakdown {
+                2 + breakdown_rows as u16
+            } else {
+                0
+            };
         let summary_h = summary_h.min(area.height.saturating_sub(4));
         let log_h = area.height.saturating_sub(summary_h).max(3);
 
@@ -484,8 +539,16 @@ impl CleanerPage {
 
         // ── Summary card ─────────────────────────────────────────────────
         let total = succeeded + failed + skipped;
-        let success_pct = if total > 0 { succeeded * 100 / total } else { 0 };
-        let card_border_color = if failed == 0 { Theme::SUCCESS } else { Theme::WARNING };
+        let success_pct = if total > 0 {
+            succeeded * 100 / total
+        } else {
+            0
+        };
+        let card_border_color = if failed == 0 {
+            Theme::SUCCESS
+        } else {
+            Theme::WARNING
+        };
 
         let mut card_lines = vec![
             Line::from(""),
@@ -494,7 +557,9 @@ impl CleanerPage {
                 Span::styled("Freed  ", Style::default().fg(Theme::MUTED)),
                 Span::styled(
                     format_size(freed, DECIMAL),
-                    Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Theme::ACCENT)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(vec![
@@ -507,13 +572,18 @@ impl CleanerPage {
                 Span::styled(
                     format!("✗ {failed} failed"),
                     if failed > 0 {
-                        Style::default().fg(Theme::DANGER).add_modifier(Modifier::BOLD)
+                        Style::default()
+                            .fg(Theme::DANGER)
+                            .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default().fg(Theme::MUTED)
                     },
                 ),
                 Span::raw("   "),
-                Span::styled(format!("– {skipped} skipped"), Style::default().fg(Theme::MUTED)),
+                Span::styled(
+                    format!("– {skipped} skipped"),
+                    Style::default().fg(Theme::MUTED),
+                ),
                 Span::raw(format!("   ({success_pct}% ok)")),
             ]),
         ];
@@ -524,25 +594,47 @@ impl CleanerPage {
                 Span::raw("  "),
                 Span::styled(
                     format!("{:<34}", "Directories"),
-                    Style::default().fg(Theme::MUTED).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Theme::MUTED)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     "File types",
-                    Style::default().fg(Theme::MUTED).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Theme::MUTED)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]));
 
-            let dirs = self.done_summary.as_ref().map(|s| &s.top_dirs[..]).unwrap_or(&[]);
-            let cats = self.done_summary.as_ref().map(|s| &s.top_cats[..]).unwrap_or(&[]);
+            let dirs = self
+                .done_summary
+                .as_ref()
+                .map(|s| &s.top_dirs[..])
+                .unwrap_or(&[]);
+            let cats = self
+                .done_summary
+                .as_ref()
+                .map(|s| &s.top_cats[..])
+                .unwrap_or(&[]);
 
             for i in 0..breakdown_rows {
-                let dir_col = dirs.get(i).map(|(label, bytes)| {
-                    format!("{:>10}  {}", format_size(*bytes, DECIMAL), truncate_tail(label, 20))
-                }).unwrap_or_default();
+                let dir_col = dirs
+                    .get(i)
+                    .map(|(label, bytes)| {
+                        format!(
+                            "{:>10}  {}",
+                            format_size(*bytes, DECIMAL),
+                            truncate_tail(label, 20)
+                        )
+                    })
+                    .unwrap_or_default();
 
-                let cat_col = cats.get(i).map(|(name, bytes)| {
-                    format!("{:<10}  {:>10}", name, format_size(*bytes, DECIMAL))
-                }).unwrap_or_default();
+                let cat_col = cats
+                    .get(i)
+                    .map(|(name, bytes)| {
+                        format!("{:<10}  {:>10}", name, format_size(*bytes, DECIMAL))
+                    })
+                    .unwrap_or_default();
 
                 card_lines.push(Line::from(vec![
                     Span::raw("  "),
@@ -560,7 +652,9 @@ impl CleanerPage {
                     .border_style(Style::default().fg(card_border_color))
                     .title(Span::styled(
                         " ✓ Summary ",
-                        Style::default().fg(card_border_color).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(card_border_color)
+                            .add_modifier(Modifier::BOLD),
                     )),
             ),
             chunks[0],
@@ -589,8 +683,12 @@ impl CleanerPage {
             }
         }
 
-        let Event::Key(k) = evt else { return PageAction::None };
-        if k.kind != KeyEventKind::Press { return PageAction::None; }
+        let Event::Key(k) = evt else {
+            return PageAction::None;
+        };
+        if k.kind != KeyEventKind::Press {
+            return PageAction::None;
+        }
 
         if matches!(self.run_state, RunState::Done { .. }) {
             match k.code {
@@ -623,7 +721,9 @@ impl CleanerPage {
 
         // Planned / Building / Running: keyboard shortcuts still apply.
         match k.code {
-            KeyCode::Char('p') => { self.build_plan(true).await; }
+            KeyCode::Char('p') => {
+                self.build_plan(true).await;
+            }
             KeyCode::Enter | KeyCode::Char('r') => {
                 if matches!(self.run_state, RunState::Planned) {
                     self.maybe_confirm_and_run().await;
@@ -633,7 +733,8 @@ impl CleanerPage {
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(p) = &self.plan {
                     let i = self.plan_list_state.selected().unwrap_or(0);
-                    self.plan_list_state.select(Some((i + 1).min(p.actions.len().saturating_sub(1))));
+                    self.plan_list_state
+                        .select(Some((i + 1).min(p.actions.len().saturating_sub(1))));
                 }
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -655,12 +756,17 @@ impl CleanerPage {
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let i = self.idle_state.selected().unwrap_or(0);
-                self.idle_state.select(Some(if i == 0 { n - 1 } else { i - 1 }));
+                self.idle_state
+                    .select(Some(if i == 0 { n - 1 } else { i - 1 }));
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 return self.activate_idle().await;
             }
-            KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
+            KeyCode::Char('q')
+            | KeyCode::Esc
+            | KeyCode::Backspace
+            | KeyCode::Char('h')
+            | KeyCode::Left => {
                 return PageAction::Pop;
             }
             _ => {}
@@ -675,9 +781,13 @@ impl CleanerPage {
             .map(|item| item.action)
             .unwrap_or(IdleAction::Back);
         match action {
-            IdleAction::Preview => { self.build_plan(true).await; }
-            IdleAction::Run     => { self.build_and_run().await; }
-            IdleAction::Back    => return PageAction::Pop,
+            IdleAction::Preview => {
+                self.build_plan(true).await;
+            }
+            IdleAction::Run => {
+                self.build_and_run().await;
+            }
+            IdleAction::Back => return PageAction::Pop,
         }
         PageAction::None
     }
@@ -695,7 +805,9 @@ impl CleanerPage {
                 self.plan = Some(plan);
                 self.run_state = RunState::Planned;
             }
-            Err(e) => { self.run_state = RunState::Error(e.to_string()); }
+            Err(e) => {
+                self.run_state = RunState::Error(e.to_string());
+            }
         }
     }
 
@@ -707,7 +819,11 @@ impl CleanerPage {
     }
 
     async fn maybe_confirm_and_run(&mut self) {
-        let risk = self.plan.as_ref().map(|p| p.risk).unwrap_or(RiskLevel::Trivial);
+        let risk = self
+            .plan
+            .as_ref()
+            .map(|p| p.risk)
+            .unwrap_or(RiskLevel::Trivial);
         if risk >= RiskLevel::Dangerous {
             self.confirm_dialog = Some(ConfirmDialog::new(
                 "This plan contains DANGEROUS actions. Type 'yes' to confirm.".into(),
@@ -759,17 +875,20 @@ impl CleanerPage {
                     };
 
                     // Collect stats for successful deletions.
-                    if let ActionResult::Success { bytes_freed } = &result {
-                        if let Some(CleanAction::Delete { path, .. }) = action {
-                            *dir_map.entry(dir_group(path, 4)).or_default() += bytes_freed;
-                            *cat_map.entry(categorize_path(path)).or_default() += bytes_freed;
-                        }
+                    if let ActionResult::Success { bytes_freed } = &result
+                        && let Some(CleanAction::Delete { path, .. }) = action
+                    {
+                        *dir_map.entry(dir_group(path, 4)).or_default() += bytes_freed;
+                        *cat_map.entry(categorize_path(path)).or_default() += bytes_freed;
                     }
 
                     let entry = match result {
                         ActionResult::Success { bytes_freed } => LogEntry {
                             kind: LogKind::Success,
-                            text: format!("{:>10}  {path_label}", format_size(bytes_freed, DECIMAL)),
+                            text: format!(
+                                "{:>10}  {path_label}",
+                                format_size(bytes_freed, DECIMAL)
+                            ),
                         },
                         ActionResult::Failed { error } => LogEntry {
                             kind: LogKind::Failed,
@@ -791,7 +910,10 @@ impl CleanerPage {
                     self.log.push(entry);
                 }
                 ProgressEvent::Warning(w) => {
-                    self.log.push(LogEntry { kind: LogKind::Warning, text: w });
+                    self.log.push(LogEntry {
+                        kind: LogKind::Warning,
+                        text: w,
+                    });
                 }
                 _ => {}
             }
@@ -820,14 +942,18 @@ impl CleanerPage {
                 self.done_summary = Some(DoneSummary { top_dirs, top_cats });
 
                 self.run_state = RunState::Done {
-                    freed:     report.bytes_freed,
+                    freed: report.bytes_freed,
                     succeeded: report.succeeded,
-                    failed:    report.failed,
-                    skipped:   report.skipped,
+                    failed: report.failed,
+                    skipped: report.skipped,
                 };
             }
-            Ok(Err(e)) => { self.run_state = RunState::Error(e.to_string()); }
-            Err(e)     => { self.run_state = RunState::Error(e.to_string()); }
+            Ok(Err(e)) => {
+                self.run_state = RunState::Error(e.to_string());
+            }
+            Err(e) => {
+                self.run_state = RunState::Error(e.to_string());
+            }
         }
     }
 
@@ -835,24 +961,24 @@ impl CleanerPage {
 
     pub fn mode(&self) -> (String, Color) {
         match &self.run_state {
-            RunState::Idle             => ("READY".into(),    Theme::MODE_NORMAL),
-            RunState::Building         => ("PLANNING".into(), Theme::MODE_BUSY),
-            RunState::Planned          => ("REVIEW".into(),   Theme::MODE_DETAIL),
-            RunState::ConfirmDangerous => ("CONFIRM".into(),  Theme::MODE_DANGER),
-            RunState::Running          => ("RUNNING".into(),  Theme::MODE_BUSY),
+            RunState::Idle => ("READY".into(), Theme::MODE_NORMAL),
+            RunState::Building => ("PLANNING".into(), Theme::MODE_BUSY),
+            RunState::Planned => ("REVIEW".into(), Theme::MODE_DETAIL),
+            RunState::ConfirmDangerous => ("CONFIRM".into(), Theme::MODE_DANGER),
+            RunState::Running => ("RUNNING".into(), Theme::MODE_BUSY),
             RunState::Done { failed, .. } if *failed > 0 => ("DONE".into(), Theme::MODE_BUSY),
-            RunState::Done { .. }      => ("DONE".into(),     Theme::MODE_DONE),
-            RunState::Error(_)         => ("ERROR".into(),    Theme::MODE_DANGER),
+            RunState::Done { .. } => ("DONE".into(), Theme::MODE_DONE),
+            RunState::Error(_) => ("ERROR".into(), Theme::MODE_DANGER),
         }
     }
 
     pub fn context(&self) -> Vec<Span<'static>> {
-        let mut spans: Vec<Span<'static>> = vec![
-            Span::styled(
-                format!("group {}", self.group.label()),
-                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
-            ),
-        ];
+        let mut spans: Vec<Span<'static>> = vec![Span::styled(
+            format!("group {}", self.group.label()),
+            Style::default()
+                .fg(Theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )];
 
         match &self.run_state {
             RunState::Planned => {
@@ -872,17 +998,24 @@ impl CleanerPage {
                 }
             }
             RunState::Running => {
-                let sp = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+                let sp = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let s = sp[self.tick_count % sp.len()];
                 spans.push(Span::styled(
                     format!("  ·  {s} {} done", self.log.len()),
                     Style::default().fg(Theme::WARNING),
                 ));
             }
-            RunState::Done { freed, succeeded, failed, .. } => {
+            RunState::Done {
+                freed,
+                succeeded,
+                failed,
+                ..
+            } => {
                 spans.push(Span::styled(
                     format!("  ·  freed {}", format_size(*freed, DECIMAL)),
-                    Style::default().fg(Theme::SUCCESS).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Theme::SUCCESS)
+                        .add_modifier(Modifier::BOLD),
                 ));
                 spans.push(Span::styled(
                     format!("  ·  ✓ {succeeded}"),
@@ -896,7 +1029,7 @@ impl CleanerPage {
                 }
             }
             RunState::Building => {
-                let sp = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+                let sp = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
                 let s = sp[self.tick_count % sp.len()];
                 spans.push(Span::styled(
                     format!("  ·  {s} building plan…"),
@@ -912,8 +1045,8 @@ impl CleanerPage {
         match &self.run_state {
             RunState::Idle | RunState::Error(_) => vec![
                 KeyHint::new("j/k", "move"),
-                KeyHint::new("⏎",   "select"),
-                KeyHint::new("q",   "back"),
+                KeyHint::new("⏎", "select"),
+                KeyHint::new("q", "back"),
             ],
             RunState::Building => vec![KeyHint::new("…", "planning")],
             RunState::Planned => vec![
@@ -928,8 +1061,8 @@ impl CleanerPage {
             RunState::Running => vec![KeyHint::new("…", "running")],
             RunState::Done { .. } => vec![
                 KeyHint::new("j/k", "scroll"),
-                KeyHint::new("r",   "again"),
-                KeyHint::new("q",   "back"),
+                KeyHint::new("r", "again"),
+                KeyHint::new("q", "back"),
             ],
         }
     }
@@ -937,9 +1070,9 @@ impl CleanerPage {
 
 fn risk_color(r: RiskLevel) -> Color {
     match r {
-        RiskLevel::Trivial   => Theme::SUCCESS,
-        RiskLevel::Safe      => Theme::ACCENT,
-        RiskLevel::Moderate  => Theme::WARNING,
+        RiskLevel::Trivial => Theme::SUCCESS,
+        RiskLevel::Safe => Theme::ACCENT,
+        RiskLevel::Moderate => Theme::WARNING,
         RiskLevel::Dangerous => Theme::DANGER,
     }
 }

@@ -1,24 +1,34 @@
 //! `user.flatpak` – Remove unused Flatpak runtimes.
 
-use wisp_core::types::{
-    CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel,
-};
+use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 struct FlatpakMeta;
 
 impl CleanerMeta for FlatpakMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("user.flatpak") }
-    fn name(&self) -> &str { "Flatpak unused runtimes" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("user.flatpak")
+    }
+    fn name(&self) -> &str {
+        "Flatpak unused runtimes"
+    }
     fn description(&self) -> &str {
         "Uninstall unused Flatpak runtimes and extensions via `flatpak uninstall --unused`."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Moderate }
-    fn requires_root(&self) -> bool { false }
-    fn supported_on(&self, _distro: &dyn Distro) -> bool { true }
-    fn group(&self) -> CleanerGroup { CleanerGroup::User }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Moderate
+    }
+    fn requires_root(&self) -> bool {
+        false
+    }
+    fn supported_on(&self, _distro: &dyn Distro) -> bool {
+        true
+    }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::User
+    }
 }
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {

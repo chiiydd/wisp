@@ -4,7 +4,7 @@ use std::future::Future;
 use std::io::{self, Write};
 use std::pin::Pin;
 
-use wisp_core::types::{Confirmation, ConfirmRequest, RiskLevel};
+use wisp_core::types::{ConfirmRequest, Confirmation, RiskLevel};
 
 // ─── Auto-approve confirmer (-y flag) ────────────────────────────────────────
 
@@ -15,7 +15,10 @@ pub struct AutoConfirmer {
 }
 
 impl wisp_core::types::Confirmer for AutoConfirmer {
-    fn ask<'a>(&'a self, req: ConfirmRequest) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>> {
+    fn ask<'a>(
+        &'a self,
+        req: ConfirmRequest,
+    ) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>> {
         let decision = if req.risk == RiskLevel::Dangerous && !self.approve_dangerous {
             Confirmation::Denied
         } else {
@@ -31,16 +34,17 @@ impl wisp_core::types::Confirmer for AutoConfirmer {
 pub struct CliConfirmer;
 
 impl wisp_core::types::Confirmer for CliConfirmer {
-    fn ask<'a>(&'a self, req: ConfirmRequest) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>> {
+    fn ask<'a>(
+        &'a self,
+        req: ConfirmRequest,
+    ) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>> {
         Box::pin(async move { prompt(&req) })
     }
 }
 
 fn prompt(req: &ConfirmRequest) -> Confirmation {
     if req.risk == RiskLevel::Dangerous {
-        print!(
-            "\n  ⚠  DANGEROUS action – type 'yes' to confirm: "
-        );
+        print!("\n  ⚠  DANGEROUS action – type 'yes' to confirm: ");
         let _ = io::stdout().flush();
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_err() {

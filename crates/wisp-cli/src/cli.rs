@@ -8,10 +8,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]
 #[command(
-    name    = "wisp",
+    name = "wisp",
     version,
     author,
-    about   = "Modern disk cleanup and analysis for Linux",
+    about = "Modern disk cleanup and analysis for Linux",
     long_about = "\
 wisp is a modern disk cleanup and analysis tool for Linux.\n\n\
 Run without arguments to enter the interactive TUI.\n\n\
@@ -19,7 +19,7 @@ EXAMPLES\n\
     wisp clean pacman -n          # dry-run pacman cache cleanup\n\
     wisp clean @user -y           # clean all user targets without prompting\n\
     wisp analyze ~/               # analyse home directory disk usage\n\
-    wisp doctor                   # check environment and permissions",
+    wisp doctor                   # check environment and permissions"
 )]
 pub struct Cli {
     #[command(flatten)]

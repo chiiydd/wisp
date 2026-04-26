@@ -6,15 +6,15 @@ use wisp_core::types::CleanReport;
 
 /// Append a completed `CleanReport` to the history file.
 pub fn append(report: &CleanReport) {
-    if let Some(path) = history_path() {
-        if let Ok(line) = serde_json::to_string(report) {
-            use std::io::Write;
-            let _ = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-                .and_then(|mut f| writeln!(f, "{line}"));
-        }
+    if let Some(path) = history_path()
+        && let Ok(line) = serde_json::to_string(report)
+    {
+        use std::io::Write;
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .and_then(|mut f| writeln!(f, "{line}"));
     }
 }
 

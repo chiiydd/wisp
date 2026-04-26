@@ -1,26 +1,34 @@
 //! `arch.orphans` – Remove orphan packages (installed as deps, no longer needed).
 
-use wisp_core::types::{
-    CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel,
-};
+use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel};
 use wisp_platform::{Distro, DistroKind};
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 struct OrphansMeta;
 
 impl CleanerMeta for OrphansMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("arch.orphans") }
-    fn name(&self) -> &str { "Orphan packages" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("arch.orphans")
+    }
+    fn name(&self) -> &str {
+        "Orphan packages"
+    }
     fn description(&self) -> &str {
         "Remove packages installed as dependencies that are no longer required by any installed package."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Moderate }
-    fn requires_root(&self) -> bool { true }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Moderate
+    }
+    fn requires_root(&self) -> bool {
+        true
+    }
     fn supported_on(&self, distro: &dyn Distro) -> bool {
         distro.kind() == DistroKind::Arch
     }
-    fn group(&self) -> CleanerGroup { CleanerGroup::System }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::System
+    }
 }
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
@@ -34,7 +42,10 @@ fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
         args.extend(orphans);
 
         Ok(vec![CleanAction::RunExternal {
-            cmd: ExternalCmd { program: "pacman".into(), args },
+            cmd: ExternalCmd {
+                program: "pacman".into(),
+                args,
+            },
             estimated_size: None,
         }])
     })

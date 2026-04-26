@@ -23,8 +23,7 @@ pub fn send_to_trash(path: &Path, dry_run: bool) -> CoreResult<()> {
         return Ok(());
     }
 
-    trash::delete(&canonical)
-        .map_err(|e| CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
+    trash::delete(&canonical).map_err(|e| CoreError::Io(std::io::Error::other(e.to_string())))
 }
 
 /// Delete `path` directly, bypassing the trash.

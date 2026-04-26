@@ -31,36 +31,36 @@ impl App {
 
     pub async fn run<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> CoreResult<()> {
         loop {
-            terminal.draw(|f: &mut ratatui::Frame| {
-                if let Some(page) = self.page_stack.last_mut() {
-                    let area = f.area();
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Length(1), // title bar
-                            Constraint::Min(1),    // body
-                            Constraint::Length(1), // statusline
-                        ])
-                        .split(area);
+            terminal
+                .draw(|f: &mut ratatui::Frame| {
+                    if let Some(page) = self.page_stack.last_mut() {
+                        let area = f.area();
+                        let chunks = Layout::default()
+                            .direction(Direction::Vertical)
+                            .constraints([
+                                Constraint::Length(1), // title bar
+                                Constraint::Min(1),    // body
+                                Constraint::Length(1), // statusline
+                            ])
+                            .split(area);
 
-                    // Title bar (immutable borrow)
-                    let title = page.title();
-                    chrome::render_titlebar(f, chunks[0], title);
+                        // Title bar (immutable borrow)
+                        let title = page.title();
+                        chrome::render_titlebar(f, chunks[0], title);
 
-                    // Body (mutable borrow)
-                    page.render(f, chunks[1]);
+                        // Body (mutable borrow)
+                        page.render(f, chunks[1]);
 
-                    // Statusline (immutable borrow, after render is done)
-                    let (mode, mode_color) = page.mode();
-                    let context = page.context();
-                    let hints = page.hints();
-                    chrome::render_statusline(f, chunks[2], &mode, mode_color, context, &hints);
-                }
-            }).map_err(|e| wisp_core::CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+                        // Statusline (immutable borrow, after render is done)
+                        let (mode, mode_color) = page.mode();
+                        let context = page.context();
+                        let hints = page.hints();
+                        chrome::render_statusline(f, chunks[2], &mode, mode_color, context, &hints);
+                    }
+                })
+                .map_err(|e| wisp_core::CoreError::Io(std::io::Error::other(e.to_string())))?;
 
-            if !event::poll(Duration::from_millis(100))
-                .map_err(|e| wisp_core::CoreError::Io(e))?
-            {
+            if !event::poll(Duration::from_millis(100)).map_err(wisp_core::CoreError::Io)? {
                 // Allow pages to tick (e.g. progress animations)
                 if let Some(page) = self.page_stack.last_mut() {
                     page.tick();
@@ -71,20 +71,19 @@ impl App {
             let evt = event::read().map_err(wisp_core::CoreError::Io)?;
 
             // Global quit bindings
-            if let Event::Key(k) = &evt {
-                if k.kind == KeyEventKind::Press {
-                    match (k.code, k.modifiers) {
-                        (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                            self.should_quit = true;
-                        }
-                        (KeyCode::Char('q'), KeyModifiers::NONE)
-                        | (KeyCode::Esc, _)
-                            if self.page_stack.len() == 1 =>
-                        {
-                            self.should_quit = true;
-                        }
-                        _ => {}
+            if let Event::Key(k) = &evt
+                && k.kind == KeyEventKind::Press
+            {
+                match (k.code, k.modifiers) {
+                    (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                        self.should_quit = true;
                     }
+                    (KeyCode::Char('q'), KeyModifiers::NONE) | (KeyCode::Esc, _)
+                        if self.page_stack.len() == 1 =>
+                    {
+                        self.should_quit = true;
+                    }
+                    _ => {}
                 }
             }
 

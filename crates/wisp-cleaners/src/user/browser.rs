@@ -23,29 +23,32 @@ use camino::Utf8PathBuf;
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 // ─── Browser registries ───────────────────────────────────────────────────────
 
 /// Chromium-family browsers — same on-disk profile layout.
 /// `(cache_root_rel_to_$HOME/.cache, config_root_rel_to_$HOME/.config)`
 const CHROMIUM_FAMILY: &[(&str, &str)] = &[
-    ("chromium",                   ".config/chromium"),
-    ("google-chrome",              ".config/google-chrome"),
-    ("google-chrome-beta",         ".config/google-chrome-beta"),
-    ("google-chrome-unstable",     ".config/google-chrome-unstable"),
-    ("BraveSoftware/Brave-Browser", ".config/BraveSoftware/Brave-Browser"),
-    ("vivaldi",                    ".config/vivaldi"),
-    ("microsoft-edge",             ".config/microsoft-edge"),
-    ("opera",                      ".config/opera"),
+    ("chromium", ".config/chromium"),
+    ("google-chrome", ".config/google-chrome"),
+    ("google-chrome-beta", ".config/google-chrome-beta"),
+    ("google-chrome-unstable", ".config/google-chrome-unstable"),
+    (
+        "BraveSoftware/Brave-Browser",
+        ".config/BraveSoftware/Brave-Browser",
+    ),
+    ("vivaldi", ".config/vivaldi"),
+    ("microsoft-edge", ".config/microsoft-edge"),
+    ("opera", ".config/opera"),
 ];
 
 /// Firefox-family browsers — XDG cache + dotted profile root pairs.
 const FIREFOX_FAMILY: &[(&str, &str)] = &[
     ("mozilla/firefox", ".mozilla/firefox"),
-    ("librewolf",       ".librewolf"),
-    ("floorp",          ".floorp"),
-    ("waterfox",        ".waterfox"),
+    ("librewolf", ".librewolf"),
+    ("floorp", ".floorp"),
+    ("waterfox", ".waterfox"),
 ];
 
 /// Subdirectories under a Chromium profile that are pure caches.
@@ -103,12 +106,16 @@ const FIREFOX_STATE_PATHS: &[&str] = &[
 
 // ─── Profile enumeration ──────────────────────────────────────────────────────
 
-fn home() -> Option<PathBuf> { dirs::home_dir() }
+fn home() -> Option<PathBuf> {
+    dirs::home_dir()
+}
 
 /// Enumerate Chromium profile directories: `Default`, `Profile N`, `Guest Profile`.
 fn chromium_profiles(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(root) else { return out };
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return out;
+    };
     for entry in rd.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         if !ft.is_dir() {
@@ -128,7 +135,9 @@ fn chromium_profiles(root: &Path) -> Vec<PathBuf> {
 /// renamed profiles still work.
 fn firefox_profiles(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(rd) = std::fs::read_dir(root) else { return out };
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return out;
+    };
     for entry in rd.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         if !ft.is_dir() {
@@ -150,7 +159,11 @@ fn push_delete(actions: &mut Vec<CleanAction>, path: PathBuf, via: DeletionVia) 
     }
     let size = wisp_core::trash::path_size(&path);
     if let Ok(utf8) = Utf8PathBuf::from_path_buf(path) {
-        actions.push(CleanAction::Delete { path: utf8, size, via });
+        actions.push(CleanAction::Delete {
+            path: utf8,
+            size,
+            via,
+        });
     }
 }
 
@@ -218,21 +231,35 @@ fn collect_state_actions(home: &Path) -> Vec<CleanAction> {
 struct BrowserCacheMeta;
 
 impl CleanerMeta for BrowserCacheMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("user.browser_cache") }
-    fn name(&self) -> &str { "Browser caches" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("user.browser_cache")
+    }
+    fn name(&self) -> &str {
+        "Browser caches"
+    }
     fn description(&self) -> &str {
         "HTTP / GPU / code / shader / startup caches for Firefox- and Chromium-family browsers. \
          Browsers rebuild these on demand; safe to delete."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Trivial }
-    fn requires_root(&self) -> bool { false }
-    fn supported_on(&self, _distro: &dyn Distro) -> bool { true }
-    fn group(&self) -> CleanerGroup { CleanerGroup::User }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Trivial
+    }
+    fn requires_root(&self) -> bool {
+        false
+    }
+    fn supported_on(&self, _distro: &dyn Distro) -> bool {
+        true
+    }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::User
+    }
 }
 
 fn plan_cache<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
     Box::pin(async move {
-        let Some(h) = home() else { return Ok(Vec::new()) };
+        let Some(h) = home() else {
+            return Ok(Vec::new());
+        };
         Ok(collect_cache_actions(&h))
     })
 }
@@ -240,30 +267,47 @@ fn plan_cache<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
 static META_CACHE: BrowserCacheMeta = BrowserCacheMeta;
 
 #[linkme::distributed_slice(CLEANERS)]
-static ENTRY_CACHE: CleanerEntry = CleanerEntry { meta: &META_CACHE, plan: plan_cache };
+static ENTRY_CACHE: CleanerEntry = CleanerEntry {
+    meta: &META_CACHE,
+    plan: plan_cache,
+};
 
 // ─── Cleaner: user.browser_state ──────────────────────────────────────────────
 
 struct BrowserStateMeta;
 
 impl CleanerMeta for BrowserStateMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("user.browser_state") }
-    fn name(&self) -> &str { "Browser site data" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("user.browser_state")
+    }
+    fn name(&self) -> &str {
+        "Browser site data"
+    }
     fn description(&self) -> &str {
         "Cookies, open-tab sessions, Service Worker CacheStorage and site IndexedDB / \
          Local Storage. Deleting will log you out of websites, close saved tabs and reset \
          offline-capable web apps. Does NOT touch saved passwords, bookmarks, history, \
          extensions or autofill. Files are sent to the trash."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Dangerous }
-    fn requires_root(&self) -> bool { false }
-    fn supported_on(&self, _distro: &dyn Distro) -> bool { true }
-    fn group(&self) -> CleanerGroup { CleanerGroup::User }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Dangerous
+    }
+    fn requires_root(&self) -> bool {
+        false
+    }
+    fn supported_on(&self, _distro: &dyn Distro) -> bool {
+        true
+    }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::User
+    }
 }
 
 fn plan_state<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
     Box::pin(async move {
-        let Some(h) = home() else { return Ok(Vec::new()) };
+        let Some(h) = home() else {
+            return Ok(Vec::new());
+        };
         Ok(collect_state_actions(&h))
     })
 }
@@ -271,4 +315,7 @@ fn plan_state<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
 static META_STATE: BrowserStateMeta = BrowserStateMeta;
 
 #[linkme::distributed_slice(CLEANERS)]
-static ENTRY_STATE: CleanerEntry = CleanerEntry { meta: &META_STATE, plan: plan_state };
+static ENTRY_STATE: CleanerEntry = CleanerEntry {
+    meta: &META_STATE,
+    plan: plan_state,
+};

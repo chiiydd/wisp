@@ -12,13 +12,21 @@ pub struct Pacman;
 pub struct Systemd;
 
 impl Distro for ArchDistro {
-    fn kind(&self) -> DistroKind { DistroKind::Arch }
-    fn name(&self) -> &str { "Arch Linux" }
-    fn id(&self) -> &str { "arch" }
+    fn kind(&self) -> DistroKind {
+        DistroKind::Arch
+    }
+    fn name(&self) -> &str {
+        "Arch Linux"
+    }
+    fn id(&self) -> &str {
+        "arch"
+    }
 }
 
 impl PackageManager for Pacman {
-    fn name(&self) -> &str { "pacman" }
+    fn name(&self) -> &str {
+        "pacman"
+    }
     fn is_available(&self) -> bool {
         std::process::Command::new("pacman")
             .arg("--version")
@@ -28,5 +36,7 @@ impl PackageManager for Pacman {
 }
 
 impl InitSystem for Systemd {
-    fn name(&self) -> &str { "systemd" }
+    fn name(&self) -> &str {
+        "systemd"
+    }
 }

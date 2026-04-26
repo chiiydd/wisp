@@ -31,27 +31,13 @@ static EXACT_BLACKLIST: &[&str] = &["/", "/home", "/tmp"];
 
 /// Directories where both the path and **all descendants** are off-limits.
 static PREFIX_BLACKLIST: &[&str] = &[
-    "/bin",
-    "/boot",
-    "/dev",
-    "/etc",
-    "/lib",
-    "/lib64",
-    "/proc",
-    "/root",   // root's home: treat as system area
-    "/run",
-    "/sbin",
-    "/srv",
-    "/sys",
-    "/usr",
-    "/var",
+    "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc",
+    "/root", // root's home: treat as system area
+    "/run", "/sbin", "/srv", "/sys", "/usr", "/var",
 ];
 
 /// Paths inside a PREFIX_BLACKLIST that individual cleaners are allowed to target.
-static WHITELIST: &[&str] = &[
-    "/var/cache/pacman/pkg",
-    "/var/log/journal",
-];
+static WHITELIST: &[&str] = &["/var/cache/pacman/pkg", "/var/log/journal"];
 
 // ─── Path validation ──────────────────────────────────────────────────────────
 
@@ -78,23 +64,30 @@ pub fn check_blacklist(canonical: &Path) -> CoreResult<()> {
     // ── 2. Exact blacklist — protect the directory itself only ───────────
     for &exact in EXACT_BLACKLIST {
         if s == exact {
-            return Err(CoreError::BlacklistedPath { path: s.into_owned() });
+            return Err(CoreError::BlacklistedPath {
+                path: s.into_owned(),
+            });
         }
     }
 
     // ── 3. Prefix blacklist — protect directory AND all descendants ──────
     for &prefix in PREFIX_BLACKLIST {
         if s == prefix || s.starts_with(&format!("{prefix}/")) {
-            return Err(CoreError::BlacklistedPath { path: s.into_owned() });
+            return Err(CoreError::BlacklistedPath {
+                path: s.into_owned(),
+            });
         }
     }
 
     // ── 4. Protect the running user's home directory itself ──────────────
     //    (allow /home/user/.cache/… but not /home/user itself)
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.is_empty() && s == home.as_str() {
-            return Err(CoreError::BlacklistedPath { path: s.into_owned() });
-        }
+    if let Ok(home) = std::env::var("HOME")
+        && !home.is_empty()
+        && s == home.as_str()
+    {
+        return Err(CoreError::BlacklistedPath {
+            path: s.into_owned(),
+        });
     }
 
     Ok(())
@@ -105,7 +98,9 @@ pub fn check_blacklist(canonical: &Path) -> CoreResult<()> {
 pub fn check_no_traversal(path: &Path) -> CoreResult<()> {
     use std::path::Component;
     if path.components().any(|c| c == Component::ParentDir) {
-        return Err(CoreError::PathTraversal { path: path.to_string_lossy().into_owned() });
+        return Err(CoreError::PathTraversal {
+            path: path.to_string_lossy().into_owned(),
+        });
     }
     Ok(())
 }

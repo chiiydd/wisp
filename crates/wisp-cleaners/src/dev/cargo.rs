@@ -4,20 +4,32 @@ use camino::Utf8PathBuf;
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 struct CargoMeta;
 
 impl CleanerMeta for CargoMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("dev.cargo") }
-    fn name(&self) -> &str { "Cargo cache" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("dev.cargo")
+    }
+    fn name(&self) -> &str {
+        "Cargo cache"
+    }
     fn description(&self) -> &str {
         "Remove ~/.cargo/registry/cache and ~/.cargo/registry/src (re-downloaded on demand)."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Safe }
-    fn requires_root(&self) -> bool { false }
-    fn supported_on(&self, _distro: &dyn Distro) -> bool { true }
-    fn group(&self) -> CleanerGroup { CleanerGroup::Dev }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Safe
+    }
+    fn requires_root(&self) -> bool {
+        false
+    }
+    fn supported_on(&self, _distro: &dyn Distro) -> bool {
+        true
+    }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::Dev
+    }
 }
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
@@ -37,7 +49,11 @@ fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
             }
             let size = wisp_core::trash::path_size(&dir);
             if let Ok(utf8) = Utf8PathBuf::from_path_buf(dir) {
-                actions.push(CleanAction::Delete { path: utf8, size, via: DeletionVia::Direct });
+                actions.push(CleanAction::Delete {
+                    path: utf8,
+                    size,
+                    via: DeletionVia::Direct,
+                });
             }
         }
         Ok(actions)

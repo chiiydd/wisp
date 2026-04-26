@@ -1,25 +1,35 @@
 //! `dev.docker` – Docker system prune (dangling images + build cache).
 
-use wisp_core::types::{
-    CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel,
-};
+use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 struct DockerMeta;
 
 impl CleanerMeta for DockerMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("dev.docker") }
-    fn name(&self) -> &str { "Docker dangling images & build cache" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("dev.docker")
+    }
+    fn name(&self) -> &str {
+        "Docker dangling images & build cache"
+    }
     fn description(&self) -> &str {
         "Remove dangling images and build cache via `docker system prune -f`. \
          Does NOT remove stopped containers or unused volumes."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Moderate }
-    fn requires_root(&self) -> bool { false }
-    fn supported_on(&self, _distro: &dyn Distro) -> bool { true }
-    fn group(&self) -> CleanerGroup { CleanerGroup::Dev }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Moderate
+    }
+    fn requires_root(&self) -> bool {
+        false
+    }
+    fn supported_on(&self, _distro: &dyn Distro) -> bool {
+        true
+    }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::Dev
+    }
 }
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
@@ -62,8 +72,14 @@ async fn docker_reclaimable() -> Option<u64> {
 }
 
 fn parse_size_token(s: &str) -> Option<u64> {
-    let digits: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-    let suffix: String = s.chars().skip_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let digits: String = s
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    let suffix: String = s
+        .chars()
+        .skip_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
     let value: f64 = digits.parse().ok()?;
     let mult: u64 = match suffix.trim().to_uppercase().as_str() {
         "KB" | "KIB" => 1_024,

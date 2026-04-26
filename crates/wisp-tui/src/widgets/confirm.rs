@@ -22,15 +22,24 @@ pub struct ConfirmDialog {
 
 impl ConfirmDialog {
     pub fn new(message: String, require_typed: bool) -> Self {
-        Self { message, require_typed, input: String::new() }
+        Self {
+            message,
+            require_typed,
+            input: String::new(),
+        }
     }
 
     pub fn render(&self, f: &mut Frame, area: Rect) {
-        let dialog_w = (area.width * 2 / 3).min(70).max(40);
+        let dialog_w = (area.width * 2 / 3).clamp(40, 70);
         let dialog_h = if self.require_typed { 9 } else { 7 };
         let x = area.x + (area.width.saturating_sub(dialog_w)) / 2;
         let y = area.y + (area.height.saturating_sub(dialog_h)) / 2;
-        let dialog_rect = Rect { x, y, width: dialog_w, height: dialog_h };
+        let dialog_rect = Rect {
+            x,
+            y,
+            width: dialog_w,
+            height: dialog_h,
+        };
 
         f.render_widget(Clear, dialog_rect);
 
@@ -56,15 +65,24 @@ impl ConfirmDialog {
 
         let msg = Paragraph::new(self.message.as_str())
             .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
         f.render_widget(msg, chunks[0]);
 
         if self.require_typed {
             let prompt = Paragraph::new(Line::from(vec![
-                Span::styled("Type 'yes' to confirm: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "Type 'yes' to confirm: ",
+                    Style::default().fg(Color::DarkGray),
+                ),
                 Span::styled(
                     self.input.as_str(),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled("█", Style::default().fg(Color::Cyan)),
             ]));
@@ -82,7 +100,9 @@ impl ConfirmDialog {
     }
 
     pub fn handle_event(&mut self, evt: &Event) -> ConfirmResult {
-        let Event::Key(k) = evt else { return ConfirmResult::Pending };
+        let Event::Key(k) = evt else {
+            return ConfirmResult::Pending;
+        };
         if k.kind != KeyEventKind::Press {
             return ConfirmResult::Pending;
         }

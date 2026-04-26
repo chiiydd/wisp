@@ -54,7 +54,10 @@ pub fn detect_distro() -> Box<dyn Distro> {
             }
         }
     }
-    Box::new(UnknownDistro { id: "unknown".into(), name: "Unknown Linux".into() })
+    Box::new(UnknownDistro {
+        id: "unknown".into(),
+        name: "Unknown Linux".into(),
+    })
 }
 
 // ─── Fallback implementation ──────────────────────────────────────────────────
@@ -65,7 +68,13 @@ struct UnknownDistro {
 }
 
 impl Distro for UnknownDistro {
-    fn kind(&self) -> DistroKind { DistroKind::Unknown(self.id.clone()) }
-    fn name(&self) -> &str { &self.name }
-    fn id(&self) -> &str { &self.id }
+    fn kind(&self) -> DistroKind {
+        DistroKind::Unknown(self.id.clone())
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn id(&self) -> &str {
+        &self.id
+    }
 }

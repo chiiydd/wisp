@@ -9,8 +9,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, RiskLevel};
 use wisp_core::CoreResult;
+use wisp_core::types::{CleanAction, CleanerMeta};
 use wisp_platform::Distro;
 
 pub mod dev;
@@ -36,8 +36,7 @@ pub struct CleanCtx {
 ///
 /// The `'a` lifetime is tied to `&'a CleanCtx` so the future may borrow
 /// from the context.
-pub type PlanFuture<'a> =
-    Pin<Box<dyn Future<Output = CoreResult<Vec<CleanAction>>> + Send + 'a>>;
+pub type PlanFuture<'a> = Pin<Box<dyn Future<Output = CoreResult<Vec<CleanAction>>> + Send + 'a>>;
 
 // ─── Registry entry ───────────────────────────────────────────────────────────
 

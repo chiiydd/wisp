@@ -15,8 +15,8 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 
 use wisp_core::CoreResult;
 use wisp_engine::{Engine, EngineConfig};
@@ -35,7 +35,7 @@ pub async fn run_tui() -> CoreResult<()> {
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)
-        .map_err(|e| wisp_core::CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| wisp_core::CoreError::Io(std::io::Error::other(e.to_string())))?;
 
     let result = App::new(engine).run(&mut terminal).await;
 

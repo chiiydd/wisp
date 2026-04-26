@@ -1,6 +1,12 @@
 [advisories]
 version = 2
 yanked  = "warn"
+# Transitive "unmaintained" advisories with no fix available; the upstreams
+# are EOL but the crates still work and have no known vulnerabilities.
+ignore = [
+    "RUSTSEC-2024-0436",  # paste — pulled in by ratatui
+    "RUSTSEC-2025-0057",  # fxhash — pulled in transitively
+]
 
 [licenses]
 version = 2
@@ -11,6 +17,7 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
+    "MPL-2.0",  # file-level copyleft only; pulled in by `dirs` -> `option-ext`
     "Unicode-3.0",
     "Unicode-DFS-2016",
     "CC0-1.0",
@@ -18,8 +25,9 @@ allow = [
     "0BSD",
     "Zlib",
 ]
-# Copyleft – deny by default
-deny = ["GPL-2.0", "GPL-3.0", "LGPL-2.0", "LGPL-2.1", "LGPL-3.0", "AGPL-3.0"]
+# cargo-deny v2 is allow-list only — anything not in `allow` is denied.
+# Copyleft licenses (GPL-*, LGPL-*, AGPL-*) are intentionally absent and
+# will fail the check if any dependency pulls them in.
 
 [bans]
 multiple-versions = "warn"

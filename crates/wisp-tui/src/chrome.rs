@@ -17,7 +17,7 @@ use crate::theme::Theme;
 /// A single key→action hint shown on the right side of the statusline.
 #[derive(Clone)]
 pub struct KeyHint {
-    pub key:   &'static str,
+    pub key: &'static str,
     pub label: &'static str,
 }
 
@@ -41,12 +41,11 @@ pub fn render_titlebar(f: &mut Frame, area: Rect, page_title: &str) {
         Span::styled(" ▎ ", Style::default().fg(Theme::ACCENT)),
         Span::styled(
             "wisp",
-            Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            "  modern disk cleanup",
-            Style::default().fg(Theme::MUTED),
-        ),
+        Span::styled("  modern disk cleanup", Style::default().fg(Theme::MUTED)),
     ]);
     f.render_widget(Paragraph::new(left), cols[0]);
 
@@ -54,7 +53,9 @@ pub fn render_titlebar(f: &mut Frame, area: Rect, page_title: &str) {
     let right = Line::from(vec![
         Span::styled(
             page_title.to_owned(),
-            Style::default().fg(Theme::FG_DIM).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Theme::FG_DIM)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw("   "),
         Span::styled(
@@ -81,14 +82,13 @@ pub fn render_statusline(
     let mut hint_spans: Vec<Span> = Vec::new();
     for (i, h) in hints.iter().enumerate() {
         if i > 0 {
-            hint_spans.push(Span::styled(
-                "  ·  ",
-                Style::default().fg(Theme::MUTED),
-            ));
+            hint_spans.push(Span::styled("  ·  ", Style::default().fg(Theme::MUTED)));
         }
         hint_spans.push(Span::styled(
             h.key,
-            Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
         ));
         hint_spans.push(Span::styled(
             format!(" {}", h.label),
@@ -131,9 +131,7 @@ pub fn render_statusline(
     );
 
     // Context (left, with leading separator)
-    let mut ctx_spans: Vec<Span> = vec![
-        Span::styled("  ", Style::default()),
-    ];
+    let mut ctx_spans: Vec<Span> = vec![Span::styled("  ", Style::default())];
     ctx_spans.extend(context);
     f.render_widget(Paragraph::new(Line::from(ctx_spans)), cols[1]);
 

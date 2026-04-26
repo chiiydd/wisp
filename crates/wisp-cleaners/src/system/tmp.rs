@@ -7,7 +7,7 @@ use camino::Utf8PathBuf;
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CleanCtx, CleanerEntry, PlanFuture, CLEANERS};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
 
 const MAX_AGE_DAYS: u64 = 7;
 const TMP: &str = "/tmp";
@@ -15,15 +15,27 @@ const TMP: &str = "/tmp";
 struct TmpMeta;
 
 impl CleanerMeta for TmpMeta {
-    fn id(&self) -> CleanerId { CleanerId::new("system.tmp") }
-    fn name(&self) -> &str { "Temporary files (/tmp)" }
+    fn id(&self) -> CleanerId {
+        CleanerId::new("system.tmp")
+    }
+    fn name(&self) -> &str {
+        "Temporary files (/tmp)"
+    }
     fn description(&self) -> &str {
         "Remove files and directories in /tmp not accessed in the last 7 days."
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Dangerous }
-    fn requires_root(&self) -> bool { false }
-    fn supported_on(&self, _distro: &dyn Distro) -> bool { true }
-    fn group(&self) -> CleanerGroup { CleanerGroup::System }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Dangerous
+    }
+    fn requires_root(&self) -> bool {
+        false
+    }
+    fn supported_on(&self, _distro: &dyn Distro) -> bool {
+        true
+    }
+    fn group(&self) -> CleanerGroup {
+        CleanerGroup::System
+    }
 }
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
@@ -50,10 +62,7 @@ fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
                 continue;
             }
 
-            let last_access = meta
-                .accessed()
-                .or_else(|_| meta.modified())
-                .unwrap_or(now);
+            let last_access = meta.accessed().or_else(|_| meta.modified()).unwrap_or(now);
 
             let age = now.duration_since(last_access).unwrap_or_default();
             if age < max_age {

@@ -15,6 +15,7 @@ use crate::errors::{CoreError, CoreResult};
 /// Root configuration structure, mirroring the TOML section layout.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct Config {
     pub general: GeneralConfig,
     pub clean: CleanConfig,
@@ -81,38 +82,40 @@ pub enum Theme {
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            clean: CleanConfig::default(),
-            analyze: AnalyzeConfig::default(),
-            tui: TuiConfig::default(),
-        }
-    }
-}
-
 impl Default for GeneralConfig {
     fn default() -> Self {
-        Self { default_profile: "default".into(), color: ColorMode::Auto, confirm_dangerous: true }
+        Self {
+            default_profile: "default".into(),
+            color: ColorMode::Auto,
+            confirm_dangerous: true,
+        }
     }
 }
 
 impl Default for CleanConfig {
     fn default() -> Self {
-        Self { default_group: "@user".into(), prefer_trash: true }
+        Self {
+            default_group: "@user".into(),
+            prefer_trash: true,
+        }
     }
 }
 
 impl Default for AnalyzeConfig {
     fn default() -> Self {
-        Self { default_depth: 5, default_format: AnalyzeFormat::Treemap }
+        Self {
+            default_depth: 5,
+            default_format: AnalyzeFormat::Treemap,
+        }
     }
 }
 
 impl Default for TuiConfig {
     fn default() -> Self {
-        Self { vim_keys: true, theme: Theme::Dark }
+        Self {
+            vim_keys: true,
+            theme: Theme::Dark,
+        }
     }
 }
 

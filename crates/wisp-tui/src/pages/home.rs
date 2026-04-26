@@ -19,8 +19,8 @@ use super::{CleanGroup, PageAction};
 /// One row in the home menu — the action it triggers is attached so the
 /// activate logic doesn't depend on the row's index.
 struct MenuItem {
-    label:  &'static str,
-    desc:   &'static str,
+    label: &'static str,
+    desc: &'static str,
     action: MenuAction,
 }
 
@@ -33,16 +33,46 @@ enum MenuAction {
 }
 
 const MENU_ITEMS: &[MenuItem] = &[
-    MenuItem { label: "Analyze",              desc: "Explore disk usage interactively",   action: MenuAction::Analyze },
-    MenuItem { label: "Quick Clean (User)",   desc: "browser cache · trash · thumbnails", action: MenuAction::Clean(CleanGroup::User) },
-    MenuItem { label: "Quick Clean (System)", desc: "pacman cache · journal · orphans",   action: MenuAction::Clean(CleanGroup::System) },
-    MenuItem { label: "Quick Clean (Dev)",    desc: "cargo · npm · pip · go · docker",    action: MenuAction::Clean(CleanGroup::Dev) },
-    MenuItem { label: "History",              desc: "View past clean sessions",           action: MenuAction::History },
-    MenuItem { label: "Quit",                 desc: "Exit wisp",                          action: MenuAction::Quit },
+    MenuItem {
+        label: "Analyze",
+        desc: "Explore disk usage interactively",
+        action: MenuAction::Analyze,
+    },
+    MenuItem {
+        label: "Quick Clean (User)",
+        desc: "browser cache · trash · thumbnails",
+        action: MenuAction::Clean(CleanGroup::User),
+    },
+    MenuItem {
+        label: "Quick Clean (System)",
+        desc: "pacman cache · journal · orphans",
+        action: MenuAction::Clean(CleanGroup::System),
+    },
+    MenuItem {
+        label: "Quick Clean (Dev)",
+        desc: "cargo · npm · pip · go · docker",
+        action: MenuAction::Clean(CleanGroup::Dev),
+    },
+    MenuItem {
+        label: "History",
+        desc: "View past clean sessions",
+        action: MenuAction::History,
+    },
+    MenuItem {
+        label: "Quit",
+        desc: "Exit wisp",
+        action: MenuAction::Quit,
+    },
 ];
 
 pub struct HomePage {
     list_state: ListState,
+}
+
+impl Default for HomePage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HomePage {
@@ -56,8 +86,8 @@ impl HomePage {
         // Centre the menu vertically; cap width.
         let menu_h = (MENU_ITEMS.len() * 2 + 2) as u16;
         let menu_w = 64u16.min(area.width.saturating_sub(4));
-        let pad_v  = area.height.saturating_sub(menu_h) / 2;
-        let pad_h  = (area.width.saturating_sub(menu_w)) / 2;
+        let pad_v = area.height.saturating_sub(menu_h) / 2;
+        let pad_h = (area.width.saturating_sub(menu_w)) / 2;
 
         let v = Layout::default()
             .direction(Direction::Vertical)
@@ -103,7 +133,9 @@ impl HomePage {
                     .border_style(Style::default().fg(Theme::ACCENT_DIM))
                     .title(Span::styled(
                         " ✦ Main menu ",
-                        Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Theme::ACCENT)
+                            .add_modifier(Modifier::BOLD),
                     )),
             )
             .highlight_style(Theme::selection())
@@ -113,7 +145,9 @@ impl HomePage {
     }
 
     pub fn handle_event(&mut self, evt: &Event) -> PageAction {
-        let Event::Key(k) = evt else { return PageAction::None };
+        let Event::Key(k) = evt else {
+            return PageAction::None;
+        };
         if k.kind != KeyEventKind::Press {
             return PageAction::None;
         }
@@ -124,9 +158,8 @@ impl HomePage {
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let i = self.list_state.selected().unwrap_or(0);
-                self.list_state.select(Some(
-                    i.checked_sub(1).unwrap_or(MENU_ITEMS.len() - 1),
-                ));
+                self.list_state
+                    .select(Some(i.checked_sub(1).unwrap_or(MENU_ITEMS.len() - 1)));
             }
             KeyCode::Enter | KeyCode::Char('l') => return self.activate(),
             KeyCode::Char('q') | KeyCode::Esc => return PageAction::Quit,
@@ -148,8 +181,8 @@ impl HomePage {
                 PageAction::PushAnalyzer(home)
             }
             MenuAction::Clean(group) => PageAction::PushCleaner(group),
-            MenuAction::History      => PageAction::PushHistory,
-            MenuAction::Quit         => PageAction::Quit,
+            MenuAction::History => PageAction::PushHistory,
+            MenuAction::Quit => PageAction::Quit,
         }
     }
 
@@ -164,19 +197,19 @@ impl HomePage {
             .get(self.list_state.selected().unwrap_or(0))
             .map(|item| item.label)
             .unwrap_or("");
-        vec![
-            Span::styled(
-                label.to_owned(),
-                Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
-            ),
-        ]
+        vec![Span::styled(
+            label.to_owned(),
+            Style::default()
+                .fg(Theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )]
     }
 
     pub fn hints(&self) -> Vec<KeyHint> {
         vec![
             KeyHint::new("j/k", "move"),
-            KeyHint::new("⏎",   "select"),
-            KeyHint::new("q",   "quit"),
+            KeyHint::new("⏎", "select"),
+            KeyHint::new("q", "quit"),
         ]
     }
 }

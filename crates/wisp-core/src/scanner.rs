@@ -16,7 +16,7 @@ use crate::types::{ScanKey, ScanNode, ScanTree};
 // ─── Options ─────────────────────────────────────────────────────────────────
 
 /// Options controlling how a directory is scanned.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ScanOptions {
     /// Maximum directory depth.  `None` means unlimited.
     pub max_depth: Option<usize>,
@@ -26,12 +26,6 @@ pub struct ScanOptions {
     pub follow_symlinks: bool,
 }
 
-impl Default for ScanOptions {
-    fn default() -> Self {
-        Self { max_depth: None, min_size: None, follow_symlinks: false }
-    }
-}
-
 // ─── Async entry point ────────────────────────────────────────────────────────
 
 /// Scan `root` asynchronously by offloading CPU work to a blocking thread.
@@ -39,7 +33,7 @@ impl Default for ScanOptions {
 pub async fn scan_directory(root: Utf8PathBuf, opts: ScanOptions) -> CoreResult<ScanTree> {
     task::spawn_blocking(move || scan_blocking(root, opts))
         .await
-        .map_err(|e| CoreError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+        .map_err(|e| CoreError::Io(std::io::Error::other(e.to_string())))?
 }
 
 // ─── Blocking implementation ──────────────────────────────────────────────────
@@ -69,10 +63,10 @@ fn scan_blocking(root: Utf8PathBuf, opts: ScanOptions) -> CoreResult<ScanTree> {
         };
 
         // Respect max depth
-        if let Some(max) = opts.max_depth {
-            if entry.depth() > max {
-                continue;
-            }
+        if let Some(max) = opts.max_depth
+            && entry.depth() > max
+        {
+            continue;
         }
 
         let path = entry.path();
@@ -100,10 +94,10 @@ fn scan_blocking(root: Utf8PathBuf, opts: ScanOptions) -> CoreResult<ScanTree> {
         }
 
         // Link to parent (parent was always visited before children with sort=true)
-        if let Some(parent) = path.parent() {
-            if let Some(&parent_key) = path_to_key.get(parent) {
-                tree.nodes[parent_key].children.push(key);
-            }
+        if let Some(parent) = path.parent()
+            && let Some(&parent_key) = path_to_key.get(parent)
+        {
+            tree.nodes[parent_key].children.push(key);
         }
 
         path_to_key.insert(path, key);
@@ -130,8 +124,11 @@ fn accumulate_sizes(tree: &mut ScanTree, key: ScanKey) -> u64 {
 
 /// Return entries sorted by size, largest first.
 pub fn top_entries(tree: &ScanTree, n: usize) -> Vec<(&Utf8PathBuf, u64, bool)> {
-    let mut entries: Vec<_> =
-        tree.nodes.values().map(|n| (&n.path, n.size, n.is_dir)).collect();
+    let mut entries: Vec<_> = tree
+        .nodes
+        .values()
+        .map(|n| (&n.path, n.size, n.is_dir))
+        .collect();
     entries.sort_by(|a, b| b.1.cmp(&a.1));
     entries.truncate(n);
     entries
@@ -141,11 +138,21 @@ pub fn top_entries(tree: &ScanTree, n: usize) -> Vec<(&Utf8PathBuf, u64, bool)> 
 pub fn format_tree(tree: &ScanTree, max_depth: usize, max_children: usize) -> String {
     let mut out = String::new();
     if let Some(root_key) = tree.root {
-        fmt_node(tree, root_key, 0, max_depth, max_children, &mut out, true, "");
+        fmt_node(
+            tree,
+            root_key,
+            0,
+            max_depth,
+            max_children,
+            &mut out,
+            true,
+            "",
+        );
     }
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fmt_node(
     tree: &ScanTree,
     key: ScanKey,
@@ -165,10 +172,18 @@ fn fmt_node(
         node.path.file_name().unwrap_or(node.path.as_str())
     };
 
-    let connector = if depth == 0 { "" } else if is_last { "└── " } else { "├── " };
+    let connector = if depth == 0 {
+        ""
+    } else if is_last {
+        "└── "
+    } else {
+        "├── "
+    };
     let dir_mark = if node.is_dir && depth > 0 { "/" } else { "" };
 
-    out.push_str(&format!("{prefix}{connector}{size_str:>10}  {name}{dir_mark}\n"));
+    out.push_str(&format!(
+        "{prefix}{connector}{size_str:>10}  {name}{dir_mark}\n"
+    ));
 
     if depth >= max_depth {
         return;
@@ -188,7 +203,16 @@ fn fmt_node(
     let n = children.len();
     for (i, &ck) in children.iter().enumerate() {
         let last = i == n - 1 && !truncated;
-        fmt_node(tree, ck, depth + 1, max_depth, max_children, out, last, &child_prefix);
+        fmt_node(
+            tree,
+            ck,
+            depth + 1,
+            max_depth,
+            max_children,
+            out,
+            last,
+            &child_prefix,
+        );
     }
 
     if truncated {

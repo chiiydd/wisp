@@ -10,12 +10,12 @@ use tokio::sync::mpsc;
 use tracing::{instrument, warn};
 use uuid::Uuid;
 
-use wisp_cleaners::{CleanCtx, CleanerEntry, CLEANERS};
+use wisp_cleaners::{CLEANERS, CleanCtx, CleanerEntry};
+use wisp_core::CoreResult;
 use wisp_core::types::{
     ActionId, ActionResult, CleanAction, CleanPlan, CleanPlanSummary, CleanReport, CleanerGroup,
-    Confirmation, ConfirmRequest, DeletionVia, Privileges, ProgressEvent, RiskLevel,
+    ConfirmRequest, Confirmation, DeletionVia, Privileges, ProgressEvent, RiskLevel,
 };
-use wisp_core::CoreResult;
 use wisp_platform::Distro;
 
 pub mod audit;
@@ -25,8 +25,8 @@ pub use wisp_cleaners::all_cleaners;
 
 // ─── Built-in confirmers ──────────────────────────────────────────────────────
 
-use std::pin::Pin;
 use std::future::Future;
+use std::pin::Pin;
 
 /// A `Confirmer` that approves every request automatically.
 pub struct AutoApproveConfirmer;
@@ -84,7 +84,10 @@ impl Engine {
     /// (`"@user"`, `"@system"`, `"@dev"`, `"@all"`).
     #[instrument(name = "wisp.plan", skip(self), fields(targets = ?targets))]
     pub async fn build_plan(&self, targets: &[&str]) -> CoreResult<CleanPlan> {
-        let ctx = CleanCtx { dry_run: self.config.dry_run, distro: self.distro.clone() };
+        let ctx = CleanCtx {
+            dry_run: self.config.dry_run,
+            distro: self.distro.clone(),
+        };
         let entries = resolve_targets(targets);
 
         let mut actions: Vec<CleanAction> = Vec::new();
@@ -119,9 +122,7 @@ impl Engine {
             .iter()
             .map(|a| match a {
                 CleanAction::Delete { size, .. } => *size,
-                CleanAction::RunExternal { estimated_size, .. } => {
-                    estimated_size.unwrap_or(0)
-                }
+                CleanAction::RunExternal { estimated_size, .. } => estimated_size.unwrap_or(0),
             })
             .sum();
 
@@ -148,7 +149,9 @@ impl Engine {
         confirmer: Arc<dyn wisp_core::types::Confirmer>,
         tx: mpsc::Sender<ProgressEvent>,
     ) -> CoreResult<CleanReport> {
-        let _ = tx.send(ProgressEvent::PlanBuilt(CleanPlanSummary::from(&plan))).await;
+        let _ = tx
+            .send(ProgressEvent::PlanBuilt(CleanPlanSummary::from(&plan)))
+            .await;
 
         let mut succeeded = 0usize;
         let mut failed = 0usize;
@@ -162,8 +165,7 @@ impl Engine {
             let _ = tx.send(ProgressEvent::ActionStarted { id }).await;
 
             // Determine if confirmation is needed
-            let needs_confirm = !auto_approve_all
-                && plan.risk > self.config.auto_approve_up_to;
+            let needs_confirm = !auto_approve_all && plan.risk > self.config.auto_approve_up_to;
 
             if needs_confirm {
                 let req = ConfirmRequest {
@@ -172,7 +174,9 @@ impl Engine {
                     risk: plan.risk,
                 };
                 match confirmer.ask(req).await {
-                    Confirmation::ApprovedAll => { auto_approve_all = true; }
+                    Confirmation::ApprovedAll => {
+                        auto_approve_all = true;
+                    }
                     Confirmation::Approved => {}
                     Confirmation::Denied => {
                         skipped += 1;
@@ -208,7 +212,9 @@ impl Engine {
                     let _ = tx
                         .send(ProgressEvent::ActionFinished {
                             id,
-                            result: ActionResult::Failed { error: e.to_string() },
+                            result: ActionResult::Failed {
+                                error: e.to_string(),
+                            },
                         })
                         .await;
                 }
@@ -239,13 +245,11 @@ impl Engine {
 
     #[instrument(name = "action", skip(self, action))]
     async fn exec_action(&self, action: &CleanAction) -> CoreResult<u64> {
-
         match action {
             CleanAction::Delete { path, size, via } => {
                 let std_path = path.as_std_path();
 
-                let effective_via = if self.config.prefer_trash
-                    && matches!(via, DeletionVia::Trash)
+                let effective_via = if self.config.prefer_trash && matches!(via, DeletionVia::Trash)
                 {
                     DeletionVia::Trash
                 } else {
@@ -263,7 +267,10 @@ impl Engine {
                 Ok(*size)
             }
 
-            CleanAction::RunExternal { cmd, estimated_size } => {
+            CleanAction::RunExternal {
+                cmd,
+                estimated_size,
+            } => {
                 if self.config.dry_run {
                     tracing::info!(
                         program = %cmd.program,
@@ -281,10 +288,10 @@ impl Engine {
 
                 if !out.status.success() {
                     let stderr = String::from_utf8_lossy(&out.stderr);
-                    return Err(wisp_core::CoreError::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("{} failed: {stderr}", cmd.program),
-                    )));
+                    return Err(wisp_core::CoreError::Io(std::io::Error::other(format!(
+                        "{} failed: {stderr}",
+                        cmd.program
+                    ))));
                 }
                 Ok(estimated_size.unwrap_or(0))
             }
@@ -303,7 +310,10 @@ pub fn resolve_targets(targets: &[&str]) -> Vec<&'static CleanerEntry> {
         match *target {
             "@all" => result.extend(all),
             "@system" => {
-                result.extend(all.iter().filter(|e| e.meta.group() == CleanerGroup::System));
+                result.extend(
+                    all.iter()
+                        .filter(|e| e.meta.group() == CleanerGroup::System),
+                );
             }
             "@user" => {
                 result.extend(all.iter().filter(|e| e.meta.group() == CleanerGroup::User));
@@ -318,9 +328,7 @@ pub fn resolve_targets(targets: &[&str]) -> Vec<&'static CleanerEntry> {
                     .filter(|e| {
                         let id = e.meta.id();
                         let s = id.as_str();
-                        s == name
-                            || s.ends_with(&format!(".{name}"))
-                            || s == &format!("arch.{name}")
+                        s == name || s.ends_with(&format!(".{name}")) || s == format!("arch.{name}")
                     })
                     .collect::<Vec<_>>();
                 result.extend(matched);
