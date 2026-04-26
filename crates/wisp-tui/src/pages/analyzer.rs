@@ -548,59 +548,170 @@ impl AnalyzerPage {
         }
     }
 
-    /// Render the entries as a polar pie chart using ratatui's `Canvas`.
-    /// Each entry occupies an angular slice proportional to its size; the
-    /// currently-selected entry's slice is brightened.
+    /// Render the entries as a polar donut chart using ratatui's `Canvas`.
+    ///
+    /// Visual cues for clarity:
+    ///   • Donut shape (inner hole) — leaves room for a center label.
+    ///   • Selected slice is **exploded** outward along its bisector and
+    ///     drawn with a slightly larger outer radius + bright fill.
+    ///   • Dark radial dividers separate adjacent non-selected slices so
+    ///     individual wedges read distinctly even with similar palette
+    ///     colors.
+    ///   • Center text shows the selected entry's name, size, and %.
     fn render_sectors(&self, f: &mut Frame, inner: Rect) {
+        struct Wedge {
+            frac:       f64,
+            base_color: Color,
+            marked:     bool,
+            is_sel:     bool,
+        }
+
         let selected = self.list_state.selected();
         let total = self.total_size as f64;
-        // Snapshot entries as (frac, color, marked, sel)
-        let mut wedges: Vec<(f64, Color, bool, bool)> = self
+
+        let mut wedges: Vec<Wedge> = self
             .entries
             .iter()
             .enumerate()
-            .map(|(i, e)| {
-                let frac = e.size as f64 / total;
-                let base = SECTOR_PALETTE[i % SECTOR_PALETTE.len()];
-                let marked = self.marked.contains(&e.path);
-                let is_sel = selected == Some(i);
-                (frac, base, marked, is_sel)
+            .map(|(i, e)| Wedge {
+                frac:       e.size as f64 / total,
+                base_color: SECTOR_PALETTE[i % SECTOR_PALETTE.len()],
+                marked:     self.marked.contains(&e.path),
+                is_sel:     selected == Some(i),
             })
+            .filter(|w| w.frac > 0.0005)
             .collect();
 
-        // Drop near-zero wedges so they don't break angle ordering visually.
-        wedges.retain(|(frac, _, _, _)| *frac > 0.0005);
+        // Pre-compute centre-label strings.  Done here so the closure only
+        // captures small owned values.
+        let center: Option<(String, String, String)> = selected
+            .and_then(|i| self.entries.get(i))
+            .map(|e| {
+                let suffix = if e.is_dir { "/" } else { "" };
+                let pct    = (e.size as f64 / total * 100.0).round() as u32;
+                (
+                    format!("{}{suffix}", e.name),
+                    format_size(e.size, DECIMAL),
+                    format!("{pct}%"),
+                )
+            });
 
+        // Approximate horizontal-centre helper: terminal cell ≈ 2 / canvas-width
+        // canvas units wide, so a string of length N centres at x = -N / W.
+        let canvas_w_chars = inner.width.max(1) as f64;
+        let center_x = move |s: &str| -(s.chars().count() as f64) / canvas_w_chars;
+
+        // Avoid moving `wedges` into the closure as a whole, since we also
+        // need it to render dividers afterwards in the same paint pass.
         let canvas = Canvas::default()
             .marker(Marker::Braille)
             .x_bounds([-1.0, 1.0])
             .y_bounds([-1.0, 1.0])
             .paint(move |ctx| {
-                let radius = 0.92;
+                const INNER_R:           f64 = 0.42;
+                const OUTER_R_DEFAULT:   f64 = 0.86;
+                const OUTER_R_SELECTED:  f64 = 0.96;
+                const EXPLODE:           f64 = 0.08;
+
                 let mut start = -std::f64::consts::FRAC_PI_2;
-                for &(frac, base, marked, is_sel) in &wedges {
-                    let end = start + frac * std::f64::consts::TAU;
-                    let color = if is_sel {
+                let mut boundaries: Vec<f64> = Vec::with_capacity(wedges.len() + 1);
+                let mut sel_neighbour: Vec<bool> = Vec::with_capacity(wedges.len() + 1);
+
+                // 1. Fills
+                for (i, w) in wedges.iter().enumerate() {
+                    boundaries.push(start);
+                    let prev_is_sel = if i == 0 {
+                        wedges.last().map(|w| w.is_sel).unwrap_or(false)
+                    } else {
+                        wedges[i - 1].is_sel
+                    };
+                    sel_neighbour.push(w.is_sel || prev_is_sel);
+
+                    let end = start + w.frac * std::f64::consts::TAU;
+                    let mid = (start + end) * 0.5;
+                    let (mcos, msin) = (mid.cos(), mid.sin());
+
+                    let (ox, oy) = if w.is_sel {
+                        (EXPLODE * mcos, EXPLODE * msin)
+                    } else {
+                        (0.0, 0.0)
+                    };
+                    let outer_r = if w.is_sel { OUTER_R_SELECTED } else { OUTER_R_DEFAULT };
+
+                    let color = if w.is_sel {
                         Color::White
-                    } else if marked {
+                    } else if w.marked {
                         Color::Magenta
                     } else {
-                        base
+                        w.base_color
                     };
-                    let n_radial = 18usize;
-                    let n_angular = ((frac * 240.0) as usize).max(2);
+
+                    let n_radial  = 14usize;
+                    let n_angular = ((w.frac * 280.0) as usize).max(3);
                     let mut pts: Vec<(f64, f64)> =
                         Vec::with_capacity((n_radial + 1) * (n_angular + 1));
                     for ai in 0..=n_angular {
                         let a = start + (end - start) * (ai as f64) / (n_angular as f64);
                         let (sa, ca) = (a.sin(), a.cos());
                         for ri in 0..=n_radial {
-                            let r = radius * (ri as f64) / (n_radial as f64);
-                            pts.push((r * ca, r * sa));
+                            let r = INNER_R + (outer_r - INNER_R) * (ri as f64) / (n_radial as f64);
+                            pts.push((ox + r * ca, oy + r * sa));
                         }
                     }
                     ctx.draw(&Points { coords: &pts, color });
                     start = end;
+                }
+
+                // 2. Radial dividers — only between adjacent non-selected wedges.
+                //    Drawn in black so they show as gaps against any palette colour.
+                if wedges.len() > 1 {
+                    let n = wedges.len();
+                    for i in 0..n {
+                        // Boundary at index i sits between wedge[i-1] and wedge[i].
+                        if sel_neighbour[i] {
+                            continue;
+                        }
+                        let a = boundaries[i];
+                        let (sa, ca) = (a.sin(), a.cos());
+                        let n_pts = 28usize;
+                        let mut line_pts: Vec<(f64, f64)> = Vec::with_capacity(n_pts + 1);
+                        for ri in 0..=n_pts {
+                            let r = INNER_R
+                                + (OUTER_R_DEFAULT - INNER_R) * (ri as f64) / (n_pts as f64);
+                            line_pts.push((r * ca, r * sa));
+                        }
+                        ctx.draw(&Points { coords: &line_pts, color: Color::Black });
+                    }
+                }
+
+                // 3. Centre label
+                if let Some((name, size, pct)) = &center {
+                    ctx.print(
+                        center_x(name),
+                        0.12,
+                        Line::from(Span::styled(
+                            name.clone(),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
+                        )),
+                    );
+                    ctx.print(
+                        center_x(size),
+                        0.00,
+                        Line::from(Span::styled(
+                            size.clone(),
+                            Style::default().fg(Color::Yellow),
+                        )),
+                    );
+                    ctx.print(
+                        center_x(pct),
+                        -0.12,
+                        Line::from(Span::styled(
+                            pct.clone(),
+                            Style::default().fg(Color::DarkGray),
+                        )),
+                    );
                 }
             });
         f.render_widget(canvas, inner);
