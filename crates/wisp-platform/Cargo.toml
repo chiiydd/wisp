@@ -5,7 +5,12 @@ edition.workspace    = true
 license.workspace    = true
 repository.workspace = true
 rust-version.workspace = true
-description  = "L1 – Platform abstraction layer for wisp"
+description  = "L1 – Platform abstraction layer (distro/package-manager/init) for wisp"
+homepage     = "https://github.com/chiiydd/wisp"
+documentation = "https://docs.rs/wisp-platform"
+readme       = "README.md"
+keywords     = ["arch", "linux", "distro", "package-manager", "platform"]
+categories   = ["os", "os::linux-apis"]
 
 [lints]
 workspace = true

@@ -1,0 +1,68 @@
+name: Publish to crates.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: "Which crate to publish"
+        required: true
+        type: choice
+        options:
+          - wisp-platform
+          - wisp-core
+          - wisp-cleaners
+          - all
+      dry_run:
+        description: "Dry-run only (no upload)"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Configure cargo credentials
+        if: ${{ !inputs.dry_run }}
+        run: |
+          mkdir -p ~/.cargo
+          echo '[registry]'                                  >  ~/.cargo/credentials.toml
+          echo "token = \"${{ secrets.CARGO_REGISTRY_TOKEN }}\"" >> ~/.cargo/credentials.toml
+
+      - name: Publish (in dependency order)
+        env:
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+          TARGET:  ${{ inputs.crate }}
+        run: |
+          set -euo pipefail
+          publish_one() {
+            local pkg="$1"
+            echo "── Publishing $pkg ──"
+            cargo publish -p "$pkg" --locked $DRY_RUN
+            # crates.io needs ~30s to index a new version before dependents resolve.
+            if [ -z "$DRY_RUN" ]; then sleep 45; fi
+          }
+
+          case "$TARGET" in
+            wisp-platform) publish_one wisp-platform ;;
+            wisp-core)     publish_one wisp-core ;;
+            wisp-cleaners) publish_one wisp-cleaners ;;
+            all)
+              publish_one wisp-platform
+              publish_one wisp-core
+              publish_one wisp-cleaners
+              ;;
+          esac

@@ -449,8 +449,8 @@ Plan 构建、`Confirmer` trait、并发执行、`ProgressEvent` channel、历�
 **阶段 7 · 可视化增强** ✅  
 Canvas 极坐标扇形图，键盘导航扇区。`v` 切换 bars / sectors，状态栏显示当前 viz 模式。
 
-**阶段 8 · 打包与发布**  
-AUR PKGBUILD（`wisp` 和 `wisp-git`）、GitHub Release、crates.io 发 `wisp-core`/`wisp-cleaners`、README、asciinema 演示。
+**阶段 8 · 打包与发布** ✅  
+AUR PKGBUILD（`wisp` 和 `wisp-git`，`packaging/aur/`）、GitHub Release workflow（tag 触发，三 target 二进制 + completion + man）、crates.io 发布脚手架（`wisp-platform` / `wisp-core` / `wisp-cleaners` 加 publish 元数据，`packaging/README.md` 记录 manual + workflow 流程）、双语 README（英文 + 中文 fold）。asciinema 演示需用户在真实终端录制后挂在 README。
 
 **阶段 9 · 扩展发行版（未来）**  
 Debian / Fedora / openSUSE。只加 L1 实现 + 对应 L3 Cleaner，L2/L4/L5 零改动。
