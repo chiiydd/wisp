@@ -28,6 +28,8 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::symbols::Marker;
+use ratatui::widgets::canvas::{Canvas, Points};
 use ratatui::widgets::{
     Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph,
 };
@@ -162,6 +164,41 @@ struct PendingDelete {
     total: u64,
 }
 
+// ─── Visualization mode ──────────────────────────────────────────────────────
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VizMode {
+    Bars,
+    Sectors,
+}
+
+impl VizMode {
+    fn next(self) -> Self {
+        match self {
+            VizMode::Bars    => VizMode::Sectors,
+            VizMode::Sectors => VizMode::Bars,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            VizMode::Bars    => "bars",
+            VizMode::Sectors => "sectors",
+        }
+    }
+}
+
+/// Distinct hues used to colour adjacent sectors in the pie chart.
+const SECTOR_PALETTE: &[Color] = &[
+    Color::Cyan,
+    Color::Yellow,
+    Color::Green,
+    Color::Magenta,
+    Color::Blue,
+    Color::Red,
+    Color::LightCyan,
+    Color::LightYellow,
+];
+
 // ─── AnalyzerPage ────────────────────────────────────────────────────────────
 
 pub struct AnalyzerPage {
@@ -178,6 +215,9 @@ pub struct AnalyzerPage {
     list_state: ListState,
     total_size: u64,
     tick_count: usize,
+
+    /// Right-pane visualization mode (toggled with `v`).
+    viz_mode: VizMode,
 
     /// Items marked for deletion (absolute paths).  Survives navigation.
     marked: HashSet<Utf8PathBuf>,
@@ -204,6 +244,7 @@ impl AnalyzerPage {
             list_state: ListState::default(),
             total_size: 0,
             tick_count: 0,
+            viz_mode: VizMode::Bars,
             marked: HashSet::new(),
             confirm: None,
             pending: None,
@@ -447,26 +488,39 @@ impl AnalyzerPage {
 
         f.render_stateful_widget(list, panes[0], &mut self.list_state);
 
-        // ── Right: proportional bar chart ────────────────────────────────
-        let bar_area = panes[1];
+        // ── Right: visualization (bars or sectors) ───────────────────────
+        let viz_area = panes[1];
+        let title = match self.viz_mode {
+            VizMode::Bars    => " Size distribution ",
+            VizMode::Sectors => " Polar sectors ",
+        };
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Theme::ACCENT_DIM))
             .title(Span::styled(
-                " Size distribution ",
+                title.to_owned(),
                 Style::default().fg(Theme::ACCENT).add_modifier(Modifier::BOLD),
             ));
-        let inner = block.inner(bar_area);
-        f.render_widget(block, bar_area);
+        let inner = block.inner(viz_area);
+        f.render_widget(block, viz_area);
 
         if self.total_size == 0 || self.entries.is_empty() || inner.height == 0 {
             return;
         }
 
+        match self.viz_mode {
+            VizMode::Bars    => self.render_bars(f, inner),
+            VizMode::Sectors => self.render_sectors(f, inner),
+        }
+    }
+
+    fn render_bars(&self, f: &mut Frame, inner: Rect) {
+        let selected = self.list_state.selected();
         let n = self.entries.len().min(inner.height as usize);
         for (i, entry) in self.entries.iter().take(n).enumerate() {
             let ratio = entry.size as f64 / self.total_size as f64;
+            let is_sel = selected == Some(i);
             let label = format!(
                 "{} {}{}",
                 format_size(entry.size, DECIMAL),
@@ -481,8 +535,10 @@ impl AnalyzerPage {
             };
             let bar_color = if self.marked.contains(&entry.path) {
                 Theme::MARK
-            } else {
+            } else if is_sel {
                 Theme::ACCENT
+            } else {
+                Theme::ACCENT_DIM
             };
             let gauge = Gauge::default()
                 .gauge_style(Style::default().fg(bar_color).bg(Theme::MUTED))
@@ -490,6 +546,64 @@ impl AnalyzerPage {
                 .label(label);
             f.render_widget(gauge, gauge_rect);
         }
+    }
+
+    /// Render the entries as a polar pie chart using ratatui's `Canvas`.
+    /// Each entry occupies an angular slice proportional to its size; the
+    /// currently-selected entry's slice is brightened.
+    fn render_sectors(&self, f: &mut Frame, inner: Rect) {
+        let selected = self.list_state.selected();
+        let total = self.total_size as f64;
+        // Snapshot entries as (frac, color, marked, sel)
+        let mut wedges: Vec<(f64, Color, bool, bool)> = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let frac = e.size as f64 / total;
+                let base = SECTOR_PALETTE[i % SECTOR_PALETTE.len()];
+                let marked = self.marked.contains(&e.path);
+                let is_sel = selected == Some(i);
+                (frac, base, marked, is_sel)
+            })
+            .collect();
+
+        // Drop near-zero wedges so they don't break angle ordering visually.
+        wedges.retain(|(frac, _, _, _)| *frac > 0.0005);
+
+        let canvas = Canvas::default()
+            .marker(Marker::Braille)
+            .x_bounds([-1.0, 1.0])
+            .y_bounds([-1.0, 1.0])
+            .paint(move |ctx| {
+                let radius = 0.92;
+                let mut start = -std::f64::consts::FRAC_PI_2;
+                for &(frac, base, marked, is_sel) in &wedges {
+                    let end = start + frac * std::f64::consts::TAU;
+                    let color = if is_sel {
+                        Color::White
+                    } else if marked {
+                        Color::Magenta
+                    } else {
+                        base
+                    };
+                    let n_radial = 18usize;
+                    let n_angular = ((frac * 240.0) as usize).max(2);
+                    let mut pts: Vec<(f64, f64)> =
+                        Vec::with_capacity((n_radial + 1) * (n_angular + 1));
+                    for ai in 0..=n_angular {
+                        let a = start + (end - start) * (ai as f64) / (n_angular as f64);
+                        let (sa, ca) = (a.sin(), a.cos());
+                        for ri in 0..=n_radial {
+                            let r = radius * (ri as f64) / (n_radial as f64);
+                            pts.push((r * ca, r * sa));
+                        }
+                    }
+                    ctx.draw(&Points { coords: &pts, color });
+                    start = end;
+                }
+            });
+        f.render_widget(canvas, inner);
     }
 
     // ── Event handling ───────────────────────────────────────────────────────
@@ -570,6 +684,9 @@ impl AnalyzerPage {
             KeyCode::Char('r') => {
                 let root = self.scan_root.clone();
                 self.start_fresh_scan(root);
+            }
+            KeyCode::Char('v') => {
+                self.viz_mode = self.viz_mode.next();
             }
             KeyCode::Esc => {
                 if !self.marked.is_empty() {
@@ -818,6 +935,12 @@ impl AnalyzerPage {
             ));
         }
 
+        // Viz mode badge
+        spans.push(Span::styled(
+            format!("  ·  viz: {}", self.viz_mode.label()),
+            Style::default().fg(Theme::MUTED),
+        ));
+
         spans
     }
 
@@ -851,6 +974,7 @@ impl AnalyzerPage {
             h.push(KeyHint::new("d", "trash"));
         }
         h.push(KeyHint::new("h", "back"));
+        h.push(KeyHint::new("v", "viz"));
         h.push(KeyHint::new("r", "rescan"));
         h.push(KeyHint::new("q", "quit"));
         h

@@ -446,8 +446,8 @@ Plan 构建、`Confirmer` trait、并发执行、`ProgressEvent` channel、历�
 **阶段 6 · L5 TUI**  
 主菜单、analyzer、cleaner 页面、history、favorites、删除确认、进度浮层。treemap 优先。验收：完整流程跑通（扫描 → 进入 → 删除 → 回退 → 收藏）。
 
-**阶段 7 · 可视化增强**  
-Canvas 极坐标扇形图，键盘导航扇区。
+**阶段 7 · 可视化增强** ✅  
+Canvas 极坐标扇形图，键盘导航扇区。`v` 切换 bars / sectors，状态栏显示当前 viz 模式。
 
 **阶段 8 · 打包与发布**  
 AUR PKGBUILD（`wisp` 和 `wisp-git`）、GitHub Release、crates.io 发 `wisp-core`/`wisp-cleaners`、README、asciinema 演示。
