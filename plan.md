@@ -104,7 +104,7 @@ wisp [全局选项] <command> [子命令] [参数]
 **`wisp tui [page]`** → 显式 TUI，可选 `analyze` / `clean` / `history` 直达页面。
 
 **`wisp clean <target|@group>`** → 命令式清理。核心命令。
-- 目标：`pacman` / `aur` / `journal` / `tmp` / `orphans` / `browser` / `thumbnails` / `trash` / `cargo` / `npm` / `pip` / `go` / `docker` / `flatpak` / ...
+- 目标：`pacman` / `aur` / `journal` / `tmp` / `orphans` / `browser_cache` / `browser_state` / `thumbnails` / `trash` / `cargo` / `npm` / `pip` / `go` / `docker` / `flatpak` / ...
 - 组：`@system` / `@user` / `@dev` / `@all`
 - 子命令：
   - `wisp clean list [--group <g>] [--risk <level>]`：列出可用 target
@@ -417,7 +417,7 @@ enabled = false
 
 ```toml
 # profiles/conservative.toml
-cleaners = ["browser", "thumbnails", "trash"]    # 白名单
+cleaners = ["browser_cache", "thumbnails", "trash"]    # 白名单
 overrides = { "clean.prefer_trash" = true, "general.dry_run_default" = true }
 ```
 
