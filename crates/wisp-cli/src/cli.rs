@@ -11,9 +11,9 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
     name    = "wisp",
     version,
     author,
-    about   = "Modern disk cleanup and analysis for Arch Linux",
+    about   = "Modern disk cleanup and analysis for Linux",
     long_about = "\
-wisp is a modern disk cleanup and analysis tool for Arch Linux.\n\n\
+wisp is a modern disk cleanup and analysis tool for Linux.\n\n\
 Run without arguments to enter the interactive TUI.\n\n\
 EXAMPLES\n\
     wisp clean pacman -n          # dry-run pacman cache cleanup\n\
