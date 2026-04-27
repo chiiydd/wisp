@@ -4,7 +4,7 @@ use camino::Utf8PathBuf;
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture, binary_exists, home_dir};
 
 struct GoMeta;
 
@@ -34,13 +34,18 @@ impl CleanerMeta for GoMeta {
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
     Box::pin(async move {
-        let gopath = gopath().await;
+        // Skip the `go env GOPATH` subprocess when go isn't on $PATH —
+        // the fallback path only matters if a stale `~/go` is left over.
+        let gopath = if binary_exists("go") {
+            gopath().await
+        } else {
+            None
+        };
         let dir = match gopath {
             Some(p) => p.join("pkg/mod/cache"),
             None => {
-                let home = match dirs::home_dir() {
-                    Some(h) => h,
-                    None => return Ok(Vec::new()),
+                let Some(home) = home_dir() else {
+                    return Ok(Vec::new());
                 };
                 home.join("go/pkg/mod/cache")
             }

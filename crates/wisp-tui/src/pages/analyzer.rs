@@ -970,7 +970,7 @@ impl AnalyzerPage {
             .map(|(p, sz)| CleanAction::Delete {
                 path: p.clone(),
                 size: *sz,
-                via: pending.via.clone(),
+                via: pending.via,
             })
             .collect();
 

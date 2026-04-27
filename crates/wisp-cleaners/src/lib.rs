@@ -6,16 +6,89 @@
 //! See `docs/adding-a-cleaner.md` for the step-by-step guide.
 
 use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use camino::Utf8PathBuf;
 use wisp_core::CoreResult;
-use wisp_core::types::{CleanAction, CleanerMeta};
+use wisp_core::types::{CleanAction, CleanerMeta, DeletionVia};
 use wisp_platform::Distro;
 
 pub mod dev;
 pub mod system;
 pub mod user;
+
+// ─── Shared helpers (used by L3 cleaners) ─────────────────────────────────────
+//
+// Several cleaners repeat the same boilerplate: `dirs::home_dir()` lookup,
+// "exists check + path_size + Delete action" for a list of relative paths,
+// and "is this binary on $PATH?". The functions below centralise that
+// pattern so individual cleaner modules stay focused on what they clean,
+// not on filesystem mechanics.
+
+/// Resolve the user's home directory, returning `None` (rather than
+/// panicking) when the lookup fails.  Cleaners typically `?`-bail or
+/// short-circuit on `None` since there's nothing to clean without a home.
+pub fn home_dir() -> Option<PathBuf> {
+    dirs::home_dir()
+}
+
+/// For each path in `rels` (relative to `$HOME`), emit a `Delete` action if
+/// the path exists. `via` controls trash vs direct deletion.
+///
+/// Returns an empty vector if `$HOME` can't be resolved or if every
+/// candidate is missing.
+pub fn delete_home_subdirs(rels: &[&str], via: DeletionVia) -> Vec<CleanAction> {
+    let Some(home) = home_dir() else {
+        return Vec::new();
+    };
+    let mut actions = Vec::with_capacity(rels.len());
+    for rel in rels {
+        let dir = home.join(rel);
+        if !dir.exists() {
+            continue;
+        }
+        let size = wisp_core::trash::path_size(&dir);
+        if let Ok(utf8) = Utf8PathBuf::from_path_buf(dir) {
+            actions.push(CleanAction::Delete {
+                path: utf8,
+                size,
+                via,
+            });
+        }
+    }
+    actions
+}
+
+/// Is `name` an executable on `$PATH`? Walks `$PATH` in-process — much
+/// cheaper than forking `which` (which several cleaners did) and avoids
+/// depending on `which` being installed.
+pub fn binary_exists(name: &str) -> bool {
+    let Ok(path) = std::env::var("PATH") else {
+        return false;
+    };
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if is_executable_file(&candidate) {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(unix)]
+fn is_executable_file(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    p.metadata()
+        .map(|m| m.is_file() && (m.permissions().mode() & 0o111) != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(p: &Path) -> bool {
+    p.is_file()
+}
 
 // ─── Execution context ────────────────────────────────────────────────────────
 

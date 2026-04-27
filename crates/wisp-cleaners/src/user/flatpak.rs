@@ -3,7 +3,7 @@
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture, binary_exists};
 
 struct FlatpakMeta;
 
@@ -33,15 +33,7 @@ impl CleanerMeta for FlatpakMeta {
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
     Box::pin(async move {
-        // Check flatpak is installed
-        let exists = tokio::process::Command::new("which")
-            .arg("flatpak")
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !exists {
+        if !binary_exists("flatpak") {
             return Ok(Vec::new());
         }
 

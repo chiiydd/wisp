@@ -3,7 +3,7 @@
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, ExternalCmd, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture, binary_exists};
 
 struct DockerMeta;
 
@@ -34,14 +34,7 @@ impl CleanerMeta for DockerMeta {
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
     Box::pin(async move {
-        let exists = tokio::process::Command::new("which")
-            .arg("docker")
-            .output()
-            .await
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-
-        if !exists {
+        if !binary_exists("docker") {
             return Ok(Vec::new());
         }
 

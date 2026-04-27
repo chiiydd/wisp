@@ -1,10 +1,9 @@
 //! `dev.pip` – pip wheel and HTTP cache cleaner.
 
-use camino::Utf8PathBuf;
-use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
+use wisp_core::types::{CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture, delete_home_subdirs};
 
 struct PipMeta;
 
@@ -33,24 +32,7 @@ impl CleanerMeta for PipMeta {
 }
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
-    Box::pin(async move {
-        let home = match dirs::home_dir() {
-            Some(h) => h,
-            None => return Ok(Vec::new()),
-        };
-        let dir = home.join(".cache").join("pip");
-        if !dir.exists() {
-            return Ok(Vec::new());
-        }
-        let size = wisp_core::trash::path_size(&dir);
-        let utf8 = Utf8PathBuf::from_path_buf(dir)
-            .map_err(|_| wisp_core::CoreError::Config("non-UTF-8 home path".into()))?;
-        Ok(vec![CleanAction::Delete {
-            path: utf8,
-            size,
-            via: DeletionVia::Direct,
-        }])
-    })
+    Box::pin(async move { Ok(delete_home_subdirs(&[".cache/pip"], DeletionVia::Direct)) })
 }
 
 static META: PipMeta = PipMeta;

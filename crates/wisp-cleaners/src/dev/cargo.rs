@@ -1,10 +1,9 @@
 //! `dev.cargo` – Cargo registry and git cache cleaner.
 
-use camino::Utf8PathBuf;
-use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
+use wisp_core::types::{CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
-use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture};
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture, delete_home_subdirs};
 
 struct CargoMeta;
 
@@ -34,29 +33,10 @@ impl CleanerMeta for CargoMeta {
 
 fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
     Box::pin(async move {
-        let home = match dirs::home_dir() {
-            Some(h) => h,
-            None => return Ok(Vec::new()),
-        };
-        let cargo = home.join(".cargo");
-        let targets: &[&str] = &["registry/cache", "registry/src"];
-
-        let mut actions = Vec::new();
-        for rel in targets {
-            let dir = cargo.join(rel);
-            if !dir.exists() {
-                continue;
-            }
-            let size = wisp_core::trash::path_size(&dir);
-            if let Ok(utf8) = Utf8PathBuf::from_path_buf(dir) {
-                actions.push(CleanAction::Delete {
-                    path: utf8,
-                    size,
-                    via: DeletionVia::Direct,
-                });
-            }
-        }
-        Ok(actions)
+        Ok(delete_home_subdirs(
+            &[".cargo/registry/cache", ".cargo/registry/src"],
+            DeletionVia::Direct,
+        ))
     })
 }
 
