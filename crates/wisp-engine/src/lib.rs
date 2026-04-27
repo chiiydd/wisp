@@ -82,6 +82,13 @@ impl Engine {
     ///
     /// Targets may be exact cleaner IDs (`"arch.pacman"`) or group aliases
     /// (`"@user"`, `"@system"`, `"@dev"`, `"@all"`).
+    ///
+    /// Cleaner `plan()` calls run **concurrently** — most are I/O-bound
+    /// (subprocess invocations like `pacman -Qtdq`, `docker system df`,
+    /// `journalctl --disk-usage`, plus directory walks via `path_size`),
+    /// so running them in parallel eliminates the serialised fork
+    /// latency. The order of the resulting `actions` matches the order
+    /// of the resolved targets so dry-run output stays stable.
     #[instrument(name = "wisp.plan", skip(self), fields(targets = ?targets))]
     pub async fn build_plan(&self, targets: &[&str]) -> CoreResult<CleanPlan> {
         let ctx = CleanCtx {
@@ -90,20 +97,33 @@ impl Engine {
         };
         let entries = resolve_targets(targets);
 
+        let supported: Vec<&'static CleanerEntry> = entries
+            .into_iter()
+            .filter(|e| e.meta.supported_on(self.distro.as_ref()))
+            .collect();
+
+        // Spawn each cleaner's plan future and await them all together.
+        // `futures::future::join_all` polls the set concurrently on the
+        // current task without requiring `'static` futures, so the borrow
+        // of `&ctx` is fine.
+        let plan_results = futures::future::join_all(supported.iter().map(|entry| {
+            let ctx = &ctx;
+            async move {
+                let span = tracing::info_span!("cleaner.plan", id = %entry.meta.id());
+                let _g = span.enter();
+                let r = (entry.plan)(ctx).await;
+                (*entry, r)
+            }
+        }))
+        .await;
+
         let mut actions: Vec<CleanAction> = Vec::new();
         let mut risks: Vec<RiskLevel> = Vec::new();
         let mut max_risk = RiskLevel::Trivial;
         let mut requires_root = false;
 
-        for entry in entries {
-            let span = tracing::info_span!("cleaner.plan", id = %entry.meta.id());
-            let _g = span.enter();
-
-            if !entry.meta.supported_on(self.distro.as_ref()) {
-                continue;
-            }
-
-            match (entry.plan)(&ctx).await {
+        for (entry, result) in plan_results {
+            match result {
                 Ok(mut acts) => {
                     let cleaner_risk = entry.meta.risk();
                     if cleaner_risk > max_risk {

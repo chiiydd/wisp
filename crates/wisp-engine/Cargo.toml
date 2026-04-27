@@ -12,6 +12,7 @@ wisp-core     = { workspace = true }
 wisp-platform = { workspace = true }
 wisp-cleaners = { workspace = true }
 tokio         = { workspace = true }
+futures       = { workspace = true }
 tracing       = { workspace = true }
 serde         = { workspace = true }
 serde_json    = { workspace = true }
