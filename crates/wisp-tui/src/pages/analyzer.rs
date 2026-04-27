@@ -584,18 +584,57 @@ impl AnalyzerPage {
         let selected = self.list_state.selected();
         let total = self.total_size as f64;
 
-        let wedges: Vec<Wedge> = self
-            .entries
-            .iter()
-            .enumerate()
-            .map(|(i, e)| Wedge {
-                frac: e.size as f64 / total,
+        // Aggregate sub-percent entries into a single "Other" wedge.
+        //
+        // Even when every entry's slice is plotted, sub-pixel-wide wedges
+        // can't fill their angular space — each renders as a single radial
+        // line, leaving the area between the lines blank. With a long tail
+        // of small files that visually empty band can occupy 20-30 % of the
+        // donut, which looks like a bug. Pooling all sub-threshold slices
+        // into one flat-grey wedge restores a continuous fill while keeping
+        // the donut's proportions exact.
+        //
+        // Selection of any aggregated entry highlights the Other wedge in
+        // white; the centre label still identifies the actual entry.
+        const OTHER_THRESHOLD: f64 = 0.005;
+
+        let mut wedges: Vec<Wedge> = Vec::with_capacity(self.entries.len());
+        let mut other_frac = 0.0f64;
+        let mut other_marked = false;
+        let mut other_sel = false;
+
+        for (i, e) in self.entries.iter().enumerate() {
+            let frac = if total > 0.0 {
+                e.size as f64 / total
+            } else {
+                0.0
+            };
+            if frac < OTHER_THRESHOLD {
+                other_frac += frac.max(0.0);
+                if self.marked.contains(&e.path) {
+                    other_marked = true;
+                }
+                if selected == Some(i) {
+                    other_sel = true;
+                }
+                continue;
+            }
+            wedges.push(Wedge {
+                frac,
                 base_color: SECTOR_PALETTE[i % SECTOR_PALETTE.len()],
                 marked: self.marked.contains(&e.path),
                 is_sel: selected == Some(i),
-            })
-            .filter(|w| w.frac > 0.0005)
-            .collect();
+            });
+        }
+
+        if other_frac > 0.0 || other_sel {
+            wedges.push(Wedge {
+                frac: other_frac,
+                base_color: Theme::FG_DIM,
+                marked: other_marked,
+                is_sel: other_sel,
+            });
+        }
 
         // Pre-compute centre-label strings.  Done here so the closure only
         // captures small owned values.
@@ -622,39 +661,25 @@ impl AnalyzerPage {
             .x_bounds([-1.0, 1.0])
             .y_bounds([-1.0, 1.0])
             .paint(move |ctx| {
+                // Wedges stay anchored to the donut regardless of selection
+                // state — no explode, no radius growth. The previous explode
+                // moved the selected wedge outward into r ∈ [0.86, 0.94],
+                // which is empty space outside the donut, so the chart
+                // looked like it grew a wedge-shaped lump on selection. Now
+                // the donut footprint is identical whether selected or not;
+                // the only on-screen change is the wedge's colour shifting
+                // to white.
                 const INNER_R: f64 = 0.42;
-                const OUTER_R_DEFAULT: f64 = 0.86;
-                const OUTER_R_SELECTED: f64 = 0.96;
-                const EXPLODE: f64 = 0.08;
+                const OUTER_R: f64 = 0.86;
 
                 let mut start = -std::f64::consts::FRAC_PI_2;
                 let mut boundaries: Vec<f64> = Vec::with_capacity(wedges.len() + 1);
-                let mut sel_neighbour: Vec<bool> = Vec::with_capacity(wedges.len() + 1);
 
                 // 1. Fills
-                for (i, w) in wedges.iter().enumerate() {
+                for w in &wedges {
                     boundaries.push(start);
-                    let prev_is_sel = if i == 0 {
-                        wedges.last().map(|w| w.is_sel).unwrap_or(false)
-                    } else {
-                        wedges[i - 1].is_sel
-                    };
-                    sel_neighbour.push(w.is_sel || prev_is_sel);
 
                     let end = start + w.frac * std::f64::consts::TAU;
-                    let mid = (start + end) * 0.5;
-                    let (mcos, msin) = (mid.cos(), mid.sin());
-
-                    let (ox, oy) = if w.is_sel {
-                        (EXPLODE * mcos, EXPLODE * msin)
-                    } else {
-                        (0.0, 0.0)
-                    };
-                    let outer_r = if w.is_sel {
-                        OUTER_R_SELECTED
-                    } else {
-                        OUTER_R_DEFAULT
-                    };
 
                     let color = if w.is_sel {
                         Color::White
@@ -672,8 +697,8 @@ impl AnalyzerPage {
                         let a = start + (end - start) * (ai as f64) / (n_angular as f64);
                         let (sa, ca) = (a.sin(), a.cos());
                         for ri in 0..=n_radial {
-                            let r = INNER_R + (outer_r - INNER_R) * (ri as f64) / (n_radial as f64);
-                            pts.push((ox + r * ca, oy + r * sa));
+                            let r = INNER_R + (OUTER_R - INNER_R) * (ri as f64) / (n_radial as f64);
+                            pts.push((r * ca, r * sa));
                         }
                     }
                     ctx.draw(&Points {
@@ -683,22 +708,17 @@ impl AnalyzerPage {
                     start = end;
                 }
 
-                // 2. Radial dividers — only between adjacent non-selected wedges.
-                //    Drawn in black so they show as gaps against any palette colour.
+                // 2. Radial dividers between every pair of adjacent wedges,
+                //    drawn black so they read as gaps against any palette
+                //    colour. With no explode there's nothing to mask, so we
+                //    no longer skip dividers around the selected wedge.
                 if wedges.len() > 1 {
-                    let n = wedges.len();
-                    for i in 0..n {
-                        // Boundary at index i sits between wedge[i-1] and wedge[i].
-                        if sel_neighbour[i] {
-                            continue;
-                        }
-                        let a = boundaries[i];
+                    for &a in &boundaries {
                         let (sa, ca) = (a.sin(), a.cos());
                         let n_pts = 28usize;
                         let mut line_pts: Vec<(f64, f64)> = Vec::with_capacity(n_pts + 1);
                         for ri in 0..=n_pts {
-                            let r = INNER_R
-                                + (OUTER_R_DEFAULT - INNER_R) * (ri as f64) / (n_pts as f64);
+                            let r = INNER_R + (OUTER_R - INNER_R) * (ri as f64) / (n_pts as f64);
                             line_pts.push((r * ca, r * sa));
                         }
                         ctx.draw(&Points {
