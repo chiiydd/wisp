@@ -8,7 +8,7 @@
 //!   • Side-by-side breakdown: top directories vs file type categories.
 //!   • Scrollable action log with full paths and sizes per entry.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use camino::Utf8Path;
@@ -161,6 +161,72 @@ fn truncate_tail(s: &str, max: usize) -> String {
     format!("…{tail}")
 }
 
+// ─── Risk filter (Planned-state view) ────────────────────────────────────────
+
+/// Visibility filter for the plan list. `All` shows everything; the other
+/// variants restrict the list to actions of a single risk level so the user
+/// can focus on (e.g.) just the Dangerous rows.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RiskFilter {
+    All,
+    Trivial,
+    Safe,
+    Moderate,
+    Dangerous,
+}
+
+impl RiskFilter {
+    fn cycle(self) -> Self {
+        match self {
+            RiskFilter::All => RiskFilter::Trivial,
+            RiskFilter::Trivial => RiskFilter::Safe,
+            RiskFilter::Safe => RiskFilter::Moderate,
+            RiskFilter::Moderate => RiskFilter::Dangerous,
+            RiskFilter::Dangerous => RiskFilter::All,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            RiskFilter::All => "all",
+            RiskFilter::Trivial => "trivial",
+            RiskFilter::Safe => "safe",
+            RiskFilter::Moderate => "moderate",
+            RiskFilter::Dangerous => "dangerous",
+        }
+    }
+
+    fn matches(self, r: RiskLevel) -> bool {
+        match self {
+            RiskFilter::All => true,
+            RiskFilter::Trivial => r == RiskLevel::Trivial,
+            RiskFilter::Safe => r == RiskLevel::Safe,
+            RiskFilter::Moderate => r == RiskLevel::Moderate,
+            RiskFilter::Dangerous => r == RiskLevel::Dangerous,
+        }
+    }
+}
+
+/// Risk of action `i` in `plan`. Falls back to `plan.risk` if the parallel
+/// `risks` vector is missing or short (older serialized plans).
+fn action_risk(plan: &CleanPlan, i: usize) -> RiskLevel {
+    plan.risks.get(i).copied().unwrap_or(plan.risk)
+}
+
+/// Count `[Trivial, Safe, Moderate, Dangerous]` actions in `plan`.
+fn count_risks(plan: &CleanPlan) -> [usize; 4] {
+    let mut c = [0usize; 4];
+    for i in 0..plan.actions.len() {
+        match action_risk(plan, i) {
+            RiskLevel::Trivial => c[0] += 1,
+            RiskLevel::Safe => c[1] += 1,
+            RiskLevel::Moderate => c[2] += 1,
+            RiskLevel::Dangerous => c[3] += 1,
+        }
+    }
+    c
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 pub struct CleanerPage {
@@ -177,6 +243,15 @@ pub struct CleanerPage {
     tick_count: usize,
     /// Set when transitioning to Done; cleared when the user resets.
     done_summary: Option<DoneSummary>,
+
+    // ── Plan-review state (Planned state only) ──────────────────────────────
+    /// Indices into `plan.actions` the user has marked to skip on execute.
+    skipped: HashSet<usize>,
+    /// Visibility filter; defaults to `All`.
+    filter: RiskFilter,
+    /// Indices of `plan.actions` currently visible (filtered + ordered).
+    /// Recomputed whenever `plan` or `filter` changes.
+    visible: Vec<usize>,
 }
 
 /// Idle-state action menu.  The action kind is attached so dispatch
@@ -232,6 +307,29 @@ impl CleanerPage {
             confirm_dialog: None,
             tick_count: 0,
             done_summary: None,
+            skipped: HashSet::new(),
+            filter: RiskFilter::All,
+            visible: Vec::new(),
+        }
+    }
+
+    /// Rebuild `visible` from the current `plan` and `filter`. Also clamps
+    /// `plan_list_state` so it stays inside the new visible range.
+    fn refresh_visible(&mut self) {
+        self.visible.clear();
+        if let Some(p) = &self.plan {
+            for (i, _) in p.actions.iter().enumerate() {
+                if self.filter.matches(action_risk(p, i)) {
+                    self.visible.push(i);
+                }
+            }
+        }
+        let cur = self.plan_list_state.selected().unwrap_or(0);
+        if self.visible.is_empty() {
+            self.plan_list_state.select(None);
+        } else {
+            self.plan_list_state
+                .select(Some(cur.min(self.visible.len() - 1)));
         }
     }
 
@@ -397,13 +495,29 @@ impl CleanerPage {
             None => return,
         };
 
-        let risk_c = risk_color(plan.risk);
+        // ── Per-row build (use the filtered visible[] view) ──────────────────
+        let total = plan.actions.len();
+        let counts = count_risks(plan);
+        let kept_size: u64 = (0..total)
+            .filter(|i| !self.skipped.contains(i))
+            .map(|i| match &plan.actions[i] {
+                CleanAction::Delete { size, .. } => *size,
+                CleanAction::RunExternal { estimated_size, .. } => estimated_size.unwrap_or(0),
+            })
+            .sum();
 
-        let items: Vec<ListItem> = plan
-            .actions
+        let visible: Vec<usize> = self
+            .visible
             .iter()
+            .copied()
             .take(PLAN_PREVIEW_CAP)
-            .map(|a: &CleanAction| {
+            .collect();
+
+        let items: Vec<ListItem> = visible
+            .iter()
+            .map(|&i| {
+                let a = &plan.actions[i];
+                let risk = action_risk(plan, i);
                 let (label, size) = match a {
                     CleanAction::Delete { path, size, .. } => (path.as_str().to_owned(), *size),
                     CleanAction::RunExternal {
@@ -414,38 +528,104 @@ impl CleanerPage {
                         estimated_size.unwrap_or(0),
                     ),
                 };
+                let skipped = self.skipped.contains(&i);
+                let risk_tag = match risk {
+                    RiskLevel::Trivial => "·",
+                    RiskLevel::Safe => " ",
+                    RiskLevel::Moderate => "⚠",
+                    RiskLevel::Dangerous => "⚠",
+                };
+                let (text_style, size_style) = if skipped {
+                    let s = Style::default()
+                        .fg(Theme::FG_DIM)
+                        .add_modifier(Modifier::CROSSED_OUT);
+                    (s, s)
+                } else {
+                    let row_color = row_color(risk);
+                    (
+                        Style::default().fg(row_color),
+                        Style::default().fg(Theme::WARNING),
+                    )
+                };
                 ListItem::new(Line::from(vec![
                     Span::styled(
-                        format!("{:>10}  ", format_size(size, DECIMAL)),
-                        Style::default().fg(Theme::WARNING),
+                        if skipped {
+                            "✗ ".to_owned()
+                        } else {
+                            format!("{risk_tag} ")
+                        },
+                        Style::default().fg(risk_color(risk)),
                     ),
-                    Span::raw(label),
+                    Span::styled(format!("{:>10}  ", format_size(size, DECIMAL)), size_style),
+                    Span::styled(label, text_style),
                 ]))
             })
             .collect();
 
-        let suffix = if plan.actions.len() > PLAN_PREVIEW_CAP {
-            format!(" · +{} more", plan.actions.len() - PLAN_PREVIEW_CAP)
-        } else {
-            String::new()
-        };
+        // ── Title: counts + filter + skip ────────────────────────────────────
+        let mut title = format!(" Plan · {total} ");
+        if counts[2] > 0 {
+            title.push_str(&format!("· {} mod ", counts[2]));
+        }
+        if counts[3] > 0 {
+            title.push_str(&format!("· {} dang ", counts[3]));
+        }
+        if !self.skipped.is_empty() {
+            title.push_str(&format!(
+                "· skip {}/{total} · keep {} ",
+                self.skipped.len(),
+                format_size(kept_size, DECIMAL)
+            ));
+        }
+        if self.filter != RiskFilter::All {
+            title.push_str(&format!("· filter:{} ", self.filter.label()));
+        }
+        if self.visible.len() > PLAN_PREVIEW_CAP {
+            title.push_str(&format!(
+                "· +{} more ",
+                self.visible.len() - PLAN_PREVIEW_CAP
+            ));
+        }
 
-        let title = format!(" Plan · {} actions{suffix} ", plan.actions.len());
+        // Border colour reflects the *kept* risk level, not the raw plan risk —
+        // skipping all Dangerous should turn the frame yellow / green, not red.
+        let kept_risk = (0..total)
+            .filter(|i| !self.skipped.contains(i))
+            .map(|i| action_risk(plan, i))
+            .max()
+            .unwrap_or(RiskLevel::Trivial);
+        let border_c = risk_color(kept_risk);
 
         let list = List::new(items)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(risk_c))
+                    .border_style(Style::default().fg(border_c))
                     .title(Span::styled(
                         title,
-                        Style::default().fg(risk_c).add_modifier(Modifier::BOLD),
+                        Style::default().fg(border_c).add_modifier(Modifier::BOLD),
                     )),
             )
             .highlight_style(Theme::selection())
             .highlight_symbol("▶ ");
         f.render_stateful_widget(list, area, &mut self.plan_list_state);
+
+        // Empty-filter hint.
+        if self.visible.is_empty() && total > 0 {
+            let inner = area.inner(ratatui::layout::Margin {
+                horizontal: 2,
+                vertical: 2,
+            });
+            f.render_widget(
+                Paragraph::new(format!(
+                    "No actions match filter '{}' — press 'a' to clear.",
+                    self.filter.label()
+                ))
+                .style(Style::default().fg(Theme::FG_DIM)),
+                inner,
+            );
+        }
     }
 
     fn render_log(&self, f: &mut Frame, area: Rect, live: bool) {
@@ -726,20 +906,58 @@ impl CleanerPage {
                 }
             }
             KeyCode::Char('q') | KeyCode::Esc | KeyCode::Backspace => return PageAction::Pop,
-            KeyCode::Down | KeyCode::Char('j') => {
-                if let Some(p) = &self.plan {
-                    let i = self.plan_list_state.selected().unwrap_or(0);
-                    self.plan_list_state
-                        .select(Some((i + 1).min(p.actions.len().saturating_sub(1))));
-                }
+            KeyCode::Down | KeyCode::Char('j') if !self.visible.is_empty() => {
+                let i = self.plan_list_state.selected().unwrap_or(0);
+                self.plan_list_state
+                    .select(Some((i + 1).min(self.visible.len() - 1)));
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 let i = self.plan_list_state.selected().unwrap_or(0);
                 self.plan_list_state.select(Some(i.saturating_sub(1)));
             }
+            // Toggle skip on the highlighted action.
+            KeyCode::Char(' ' | 's') => {
+                if let Some(sel) = self.plan_list_state.selected()
+                    && let Some(&idx) = self.visible.get(sel)
+                    && !self.skipped.insert(idx)
+                {
+                    self.skipped.remove(&idx);
+                }
+            }
+            // Bulk-skip every Dangerous action — the "one-key cancel" the
+            // user asked for.
+            KeyCode::Char('D') => self.skip_all_at_risk(RiskLevel::Dangerous),
+            // Bulk-skip Moderate too.
+            KeyCode::Char('M') => self.skip_all_at_risk(RiskLevel::Moderate),
+            // Clear all skips — useful after bulk-skipping by mistake.
+            KeyCode::Char('U') => {
+                self.skipped.clear();
+            }
+            // Cycle filter: All → Trivial → Safe → Moderate → Dangerous → All
+            KeyCode::Char('f') => {
+                self.filter = self.filter.cycle();
+                self.plan_list_state.select(Some(0));
+                self.refresh_visible();
+            }
+            // Reset filter to All.
+            KeyCode::Char('a') if self.filter != RiskFilter::All => {
+                self.filter = RiskFilter::All;
+                self.plan_list_state.select(Some(0));
+                self.refresh_visible();
+            }
             _ => {}
         }
         PageAction::None
+    }
+
+    /// Mark every action whose risk equals `level` as skipped.
+    fn skip_all_at_risk(&mut self, level: RiskLevel) {
+        let Some(plan) = &self.plan else { return };
+        for i in 0..plan.actions.len() {
+            if action_risk(plan, i) == level {
+                self.skipped.insert(i);
+            }
+        }
     }
 
     /// Handle Idle (and Error) state events: navigate the action list and activate.
@@ -799,6 +1017,10 @@ impl CleanerPage {
         match engine.build_plan(&[target]).await {
             Ok(plan) => {
                 self.plan = Some(plan);
+                self.skipped.clear();
+                self.filter = RiskFilter::All;
+                self.plan_list_state.select(Some(0));
+                self.refresh_visible();
                 self.run_state = RunState::Planned;
             }
             Err(e) => {
@@ -815,12 +1037,21 @@ impl CleanerPage {
     }
 
     async fn maybe_confirm_and_run(&mut self) {
-        let risk = self
+        // Risk after applying the user's skip set. Skipping every Dangerous
+        // action drops the prompt, so the user gets exactly the friction they
+        // chose.
+        let kept_risk = self
             .plan
             .as_ref()
-            .map(|p| p.risk)
+            .map(|p| {
+                (0..p.actions.len())
+                    .filter(|i| !self.skipped.contains(i))
+                    .map(|i| action_risk(p, i))
+                    .max()
+                    .unwrap_or(RiskLevel::Trivial)
+            })
             .unwrap_or(RiskLevel::Trivial);
-        if risk >= RiskLevel::Dangerous {
+        if kept_risk >= RiskLevel::Dangerous {
             self.confirm_dialog = Some(ConfirmDialog::new(
                 "This plan contains DANGEROUS actions. Type 'yes' to confirm.".into(),
                 true,
@@ -836,6 +1067,50 @@ impl CleanerPage {
             Some(p) => p,
             None => return,
         };
+
+        // Drop skipped actions before submitting to the engine, and recompute
+        // size + risk on the survivors.
+        let plan = if self.skipped.is_empty() {
+            plan
+        } else {
+            let CleanPlan {
+                id,
+                actions,
+                risks,
+                required_privileges,
+                ..
+            } = plan;
+            let mut new_actions = Vec::with_capacity(actions.len() - self.skipped.len());
+            let mut new_risks = Vec::with_capacity(new_actions.capacity());
+            for (i, a) in actions.into_iter().enumerate() {
+                if !self.skipped.contains(&i) {
+                    let r = risks.get(i).copied().unwrap_or(RiskLevel::Safe);
+                    new_actions.push(a);
+                    new_risks.push(r);
+                }
+            }
+            let estimated_size = new_actions
+                .iter()
+                .map(|a| match a {
+                    CleanAction::Delete { size, .. } => *size,
+                    CleanAction::RunExternal { estimated_size, .. } => estimated_size.unwrap_or(0),
+                })
+                .sum();
+            let max_risk = new_risks
+                .iter()
+                .copied()
+                .max()
+                .unwrap_or(RiskLevel::Trivial);
+            CleanPlan {
+                id,
+                actions: new_actions,
+                risks: new_risks,
+                estimated_size,
+                required_privileges,
+                risk: max_risk,
+            }
+        };
+        self.skipped.clear();
 
         self.run_state = RunState::Running;
         self.log.clear();
@@ -979,18 +1254,53 @@ impl CleanerPage {
         match &self.run_state {
             RunState::Planned => {
                 if let Some(p) = &self.plan {
+                    let counts = count_risks(p);
+                    let kept = p.actions.len() - self.skipped.len();
+                    let kept_size: u64 = (0..p.actions.len())
+                        .filter(|i| !self.skipped.contains(i))
+                        .map(|i| match &p.actions[i] {
+                            CleanAction::Delete { size, .. } => *size,
+                            CleanAction::RunExternal { estimated_size, .. } => {
+                                estimated_size.unwrap_or(0)
+                            }
+                        })
+                        .sum();
+                    let kept_risk = (0..p.actions.len())
+                        .filter(|i| !self.skipped.contains(i))
+                        .map(|i| action_risk(p, i))
+                        .max()
+                        .unwrap_or(RiskLevel::Trivial);
+
                     spans.push(Span::styled(
-                        format!("  ·  {} actions", p.actions.len()),
+                        format!("  ·  {kept}/{} actions", p.actions.len()),
                         Style::default().fg(Theme::FG_DIM),
                     ));
                     spans.push(Span::styled(
-                        format!("  ·  ≈ {}", format_size(p.estimated_size, DECIMAL)),
+                        format!("  ·  ≈ {}", format_size(kept_size, DECIMAL)),
                         Style::default().fg(Theme::WARNING),
                     ));
+                    if counts[2] > 0 {
+                        spans.push(Span::styled(
+                            format!("  ·  ⚠ {} mod", counts[2]),
+                            Style::default().fg(Theme::WARNING),
+                        ));
+                    }
+                    if counts[3] > 0 {
+                        spans.push(Span::styled(
+                            format!("  ·  ⚠ {} dang", counts[3]),
+                            Style::default().fg(Theme::DANGER),
+                        ));
+                    }
                     spans.push(Span::styled(
-                        format!("  ·  risk: {:?}", p.risk),
-                        Style::default().fg(risk_color(p.risk)),
+                        format!("  ·  risk: {kept_risk:?}"),
+                        Style::default().fg(risk_color(kept_risk)),
                     ));
+                    if self.filter != RiskFilter::All {
+                        spans.push(Span::styled(
+                            format!("  ·  filter:{}", self.filter.label()),
+                            Style::default().fg(Theme::ACCENT),
+                        ));
+                    }
                 }
             }
             RunState::Running => {
@@ -1046,7 +1356,13 @@ impl CleanerPage {
             ],
             RunState::Building => vec![KeyHint::new("…", "planning")],
             RunState::Planned => vec![
-                KeyHint::new("⏎", "execute"),
+                KeyHint::new("j/k", "move"),
+                KeyHint::new("␣", "skip"),
+                KeyHint::new("D", "−dang"),
+                KeyHint::new("M", "−mod"),
+                KeyHint::new("U", "undo"),
+                KeyHint::new("f", "filter"),
+                KeyHint::new("⏎", "run"),
                 KeyHint::new("p", "rebuild"),
                 KeyHint::new("q", "back"),
             ],
@@ -1068,6 +1384,18 @@ fn risk_color(r: RiskLevel) -> Color {
     match r {
         RiskLevel::Trivial => Theme::SUCCESS,
         RiskLevel::Safe => Theme::ACCENT,
+        RiskLevel::Moderate => Theme::WARNING,
+        RiskLevel::Dangerous => Theme::DANGER,
+    }
+}
+
+/// Per-row label colour in the plan list. Slightly less saturated than
+/// `risk_color` so a long list of Trivial / Safe rows isn't visually loud,
+/// while Moderate and Dangerous still pop.
+fn row_color(r: RiskLevel) -> Color {
+    match r {
+        RiskLevel::Trivial => Theme::FG_DIM,
+        RiskLevel::Safe => Color::Reset,
         RiskLevel::Moderate => Theme::WARNING,
         RiskLevel::Dangerous => Theme::DANGER,
     }

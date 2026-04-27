@@ -123,6 +123,12 @@ pub enum CleanAction {
 pub struct CleanPlan {
     pub id: Uuid,
     pub actions: Vec<CleanAction>,
+    /// Per-action risk level — parallel to `actions` (same length).
+    /// Lets the UI / confirmer filter or skip by risk without having to
+    /// re-derive it from the cleaner that produced each action.
+    /// `#[serde(default)]` keeps old serialized plans deserializable.
+    #[serde(default)]
+    pub risks: Vec<RiskLevel>,
     /// Sum of known `size` fields; may undercount when sizes are unknown.
     pub estimated_size: u64,
     pub required_privileges: Privileges,

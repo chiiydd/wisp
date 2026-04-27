@@ -91,6 +91,7 @@ impl Engine {
         let entries = resolve_targets(targets);
 
         let mut actions: Vec<CleanAction> = Vec::new();
+        let mut risks: Vec<RiskLevel> = Vec::new();
         let mut max_risk = RiskLevel::Trivial;
         let mut requires_root = false;
 
@@ -104,12 +105,14 @@ impl Engine {
 
             match (entry.plan)(&ctx).await {
                 Ok(mut acts) => {
-                    if entry.meta.risk() > max_risk {
-                        max_risk = entry.meta.risk();
+                    let cleaner_risk = entry.meta.risk();
+                    if cleaner_risk > max_risk {
+                        max_risk = cleaner_risk;
                     }
                     if entry.meta.requires_root() {
                         requires_root = true;
                     }
+                    risks.extend(std::iter::repeat_n(cleaner_risk, acts.len()));
                     actions.append(&mut acts);
                 }
                 Err(e) => {
@@ -129,6 +132,7 @@ impl Engine {
         Ok(CleanPlan {
             id: Uuid::new_v4(),
             actions,
+            risks,
             estimated_size,
             required_privileges: Privileges { requires_root },
             risk: max_risk,

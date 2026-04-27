@@ -921,17 +921,20 @@ impl AnalyzerPage {
             })
             .collect();
 
+        let action_risk = match pending.via {
+            DeletionVia::Trash => RiskLevel::Safe,
+            DeletionVia::Direct => RiskLevel::Moderate,
+        };
+        let risks = vec![action_risk; actions.len()];
         let plan = CleanPlan {
             id: Uuid::new_v4(),
             actions,
+            risks,
             estimated_size: pending.total,
             required_privileges: Privileges {
                 requires_root: false,
             },
-            risk: match pending.via {
-                DeletionVia::Trash => RiskLevel::Safe,
-                DeletionVia::Direct => RiskLevel::Moderate,
-            },
+            risk: action_risk,
         };
 
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ProgressEvent>(256);
