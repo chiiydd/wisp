@@ -84,3 +84,43 @@ static META: JournalMeta = JournalMeta;
 
 #[linkme::distributed_slice(CLEANERS)]
 static ENTRY: CleanerEntry = CleanerEntry { meta: &META, plan };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_megabyte_journal_size() {
+        let s = "Archived and active journals take up 123.4 M in the file system.";
+        let parsed = parse_disk_usage(s).expect("size should parse");
+        assert_eq!(parsed, (123.4 * 1_024.0 * 1_024.0) as u64);
+    }
+
+    #[test]
+    fn parses_gigabyte_journal_size() {
+        let s = "Archived and active journals take up 2.0 G in the file system.";
+        let parsed = parse_disk_usage(s).expect("size should parse");
+        assert_eq!(parsed, 2 * 1_024 * 1_024 * 1_024);
+    }
+
+    #[test]
+    fn parses_kilobyte_with_comma_decimal() {
+        // Some locales emit "8,2 K" instead of "8.2 K"
+        let s = "Archived and active journals take up 8,2 K in the file system.";
+        let parsed = parse_disk_usage(s).expect("size should parse");
+        assert_eq!(parsed, (8.2 * 1_024.0) as u64);
+    }
+
+    #[test]
+    fn parses_bytes_when_no_unit_marker() {
+        let s = "Archived and active journals take up 512 in the file system.";
+        let parsed = parse_disk_usage(s).expect("size should parse");
+        assert_eq!(parsed, 512);
+    }
+
+    #[test]
+    fn returns_none_on_garbage_input() {
+        assert!(parse_disk_usage("nothing relevant here").is_none());
+        assert!(parse_disk_usage("").is_none());
+    }
+}

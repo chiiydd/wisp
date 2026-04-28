@@ -43,9 +43,16 @@ pub fn delete_home_subdirs(rels: &[&str], via: DeletionVia) -> Vec<CleanAction> 
     let Some(home) = home_dir() else {
         return Vec::new();
     };
+    delete_subdirs_under(&home, rels, via)
+}
+
+/// Same as `delete_home_subdirs` but rooted at an explicit directory.
+/// Split out so tests can drive it against a tempdir without mutating
+/// `$HOME`.
+pub fn delete_subdirs_under(root: &Path, rels: &[&str], via: DeletionVia) -> Vec<CleanAction> {
     let mut actions = Vec::with_capacity(rels.len());
     for rel in rels {
-        let dir = home.join(rel);
+        let dir = root.join(rel);
         if !dir.exists() {
             continue;
         }
@@ -138,4 +145,106 @@ pub static CLEANERS: [CleanerEntry] = [..];
 /// Iterate over all registered cleaners.
 pub fn all_cleaners() -> &'static [CleanerEntry] {
     &CLEANERS
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+    use wisp_core::types::CleanAction;
+
+    fn write_file(path: &Path, bytes: &[u8]) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn delete_subdirs_under_skips_missing_paths() {
+        let tmp = TempDir::new().unwrap();
+        // No files/dirs at all under tmp.
+        let actions = delete_subdirs_under(
+            tmp.path(),
+            &["does/not/exist", "also/missing"],
+            DeletionVia::Direct,
+        );
+        assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn delete_subdirs_under_emits_actions_only_for_present_paths() {
+        let tmp = TempDir::new().unwrap();
+        // Create one of the candidates; leave the other missing.
+        write_file(&tmp.path().join("a/file.txt"), b"hello");
+
+        let actions = delete_subdirs_under(tmp.path(), &["a", "b"], DeletionVia::Direct);
+
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            CleanAction::Delete { path, size, via } => {
+                assert!(path.ends_with("a"));
+                assert_eq!(*via, DeletionVia::Direct);
+                assert_eq!(*size, 5); // "hello" is 5 bytes
+            }
+            _ => panic!("expected Delete action"),
+        }
+    }
+
+    #[test]
+    fn delete_subdirs_under_records_sum_of_file_sizes() {
+        let tmp = TempDir::new().unwrap();
+        write_file(&tmp.path().join("cache/x"), &[0u8; 100]);
+        write_file(&tmp.path().join("cache/sub/y"), &[0u8; 250]);
+
+        let actions = delete_subdirs_under(tmp.path(), &["cache"], DeletionVia::Trash);
+
+        assert_eq!(actions.len(), 1);
+        let CleanAction::Delete { size, via, .. } = &actions[0] else {
+            panic!("expected Delete");
+        };
+        assert_eq!(*size, 350);
+        assert_eq!(*via, DeletionVia::Trash);
+    }
+
+    #[test]
+    fn delete_subdirs_under_empty_rels_returns_empty() {
+        let tmp = TempDir::new().unwrap();
+        assert!(delete_subdirs_under(tmp.path(), &[], DeletionVia::Direct).is_empty());
+    }
+
+    #[test]
+    fn binary_exists_finds_a_known_shell() {
+        // /bin/sh is mandated by POSIX on every supported target; CI Linux
+        // images all have it. Either `sh` or `bash` is enough.
+        assert!(
+            binary_exists("sh") || binary_exists("bash"),
+            "expected at least one of sh / bash on $PATH"
+        );
+    }
+
+    #[test]
+    fn binary_exists_rejects_nonsense_name() {
+        assert!(!binary_exists("zzz_wisp_definitely_not_a_real_binary_xyz"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn is_executable_file_distinguishes_exec_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let exec = tmp.path().join("runnable");
+        let plain = tmp.path().join("plain.txt");
+        fs::write(&exec, b"#!/bin/sh\necho hi\n").unwrap();
+        fs::write(&plain, b"data").unwrap();
+        fs::set_permissions(&exec, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&plain, fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(is_executable_file(&exec));
+        assert!(!is_executable_file(&plain));
+        assert!(!is_executable_file(&tmp.path().join("nonexistent")));
+    }
 }

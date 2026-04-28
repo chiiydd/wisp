@@ -283,3 +283,122 @@ pub struct ScanTree {
     pub nodes: SlotMap<ScanKey, ScanNode>,
     pub root: Option<ScanKey>,
 }
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn risk_level_ordering_matches_severity() {
+        assert!(RiskLevel::Trivial < RiskLevel::Safe);
+        assert!(RiskLevel::Safe < RiskLevel::Moderate);
+        assert!(RiskLevel::Moderate < RiskLevel::Dangerous);
+        // The whole chain is total-ordered so max() works as expected.
+        assert_eq!(
+            *[
+                RiskLevel::Trivial,
+                RiskLevel::Moderate,
+                RiskLevel::Safe,
+                RiskLevel::Dangerous,
+            ]
+            .iter()
+            .max()
+            .unwrap(),
+            RiskLevel::Dangerous
+        );
+    }
+
+    #[test]
+    fn risk_level_serialises_lowercase() {
+        let json = serde_json::to_string(&RiskLevel::Dangerous).unwrap();
+        assert_eq!(json, "\"dangerous\"");
+        let back: RiskLevel = serde_json::from_str("\"trivial\"").unwrap();
+        assert_eq!(back, RiskLevel::Trivial);
+    }
+
+    #[test]
+    fn deletion_via_is_copy() {
+        let v = DeletionVia::Trash;
+        // If DeletionVia weren't Copy this line wouldn't compile — explicitly
+        // exercising the property the cleaner code relies on.
+        let copy = v;
+        assert_eq!(v, copy);
+    }
+
+    #[test]
+    fn deletion_via_serialises_snake_case() {
+        let json = serde_json::to_string(&DeletionVia::Direct).unwrap();
+        assert_eq!(json, "\"direct\"");
+    }
+
+    #[test]
+    fn cleaner_group_serialises_lowercase() {
+        let json = serde_json::to_string(&CleanerGroup::System).unwrap();
+        assert_eq!(json, "\"system\"");
+    }
+
+    #[test]
+    fn cleaner_id_display_round_trips() {
+        let id = CleanerId::new("user.browser_cache");
+        assert_eq!(id.as_str(), "user.browser_cache");
+        assert_eq!(id.to_string(), "user.browser_cache");
+    }
+
+    #[test]
+    fn cleaner_id_equality_and_hash() {
+        use std::collections::HashSet;
+        let a = CleanerId::new("dev.cargo");
+        let b = CleanerId::new("dev.cargo");
+        assert_eq!(a, b);
+
+        let mut set = HashSet::new();
+        set.insert(a);
+        // Hash-based dedup must collapse equal IDs.
+        assert!(!set.insert(b));
+    }
+
+    #[test]
+    fn clean_action_delete_round_trips_through_json() {
+        let action = CleanAction::Delete {
+            path: Utf8PathBuf::from("/tmp/wisp-test"),
+            size: 1234,
+            via: DeletionVia::Trash,
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        let back: CleanAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(action, back);
+    }
+
+    #[test]
+    fn clean_plan_summary_extracts_action_count_and_risk() {
+        use uuid::Uuid;
+
+        let plan = CleanPlan {
+            id: Uuid::nil(),
+            actions: vec![
+                CleanAction::Delete {
+                    path: Utf8PathBuf::from("/tmp/a"),
+                    size: 10,
+                    via: DeletionVia::Direct,
+                },
+                CleanAction::Delete {
+                    path: Utf8PathBuf::from("/tmp/b"),
+                    size: 20,
+                    via: DeletionVia::Direct,
+                },
+            ],
+            risks: vec![RiskLevel::Trivial, RiskLevel::Moderate],
+            estimated_size: 30,
+            required_privileges: Privileges {
+                requires_root: false,
+            },
+            risk: RiskLevel::Moderate,
+        };
+        let summary = CleanPlanSummary::from(&plan);
+        assert_eq!(summary.action_count, 2);
+        assert_eq!(summary.estimated_size, 30);
+        assert_eq!(summary.risk, RiskLevel::Moderate);
+    }
+}

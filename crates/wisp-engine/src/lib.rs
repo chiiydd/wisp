@@ -366,3 +366,90 @@ pub fn resolve_targets(targets: &[&str]) -> Vec<&'static CleanerEntry> {
 
     result
 }
+
+#[cfg(test)]
+mod resolve_targets_tests {
+    use super::*;
+
+    fn ids(entries: &[&'static CleanerEntry]) -> Vec<String> {
+        entries
+            .iter()
+            .map(|e| e.meta.id().as_str().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn at_all_returns_every_registered_cleaner() {
+        let resolved = resolve_targets(&["@all"]);
+        assert_eq!(resolved.len(), CLEANERS.len());
+    }
+
+    #[test]
+    fn at_user_returns_only_user_group() {
+        let resolved = resolve_targets(&["@user"]);
+        assert!(
+            !resolved.is_empty(),
+            "@user should match at least one cleaner"
+        );
+        assert!(
+            resolved
+                .iter()
+                .all(|e| e.meta.group() == CleanerGroup::User)
+        );
+    }
+
+    #[test]
+    fn at_dev_returns_only_dev_group() {
+        let resolved = resolve_targets(&["@dev"]);
+        assert!(!resolved.is_empty());
+        assert!(resolved.iter().all(|e| e.meta.group() == CleanerGroup::Dev));
+    }
+
+    #[test]
+    fn suffix_match_resolves_short_name() {
+        // "browser_cache" should match "user.browser_cache".
+        let resolved = resolve_targets(&["browser_cache"]);
+        let names = ids(&resolved);
+        assert!(names.iter().any(|s| s == "user.browser_cache"));
+    }
+
+    #[test]
+    fn exact_id_match_takes_precedence_or_at_least_works() {
+        let resolved = resolve_targets(&["user.thumbnails"]);
+        let names = ids(&resolved);
+        assert_eq!(names, vec!["user.thumbnails"]);
+    }
+
+    #[test]
+    fn unknown_target_resolves_to_nothing() {
+        let resolved = resolve_targets(&["definitely_not_a_real_cleaner_xyz"]);
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn dedup_preserves_first_occurrence_order() {
+        // "@user" includes user.thumbnails; explicitly naming it again must
+        // not add a duplicate.
+        let resolved = resolve_targets(&["@user", "thumbnails"]);
+        let names = ids(&resolved);
+        let count = names
+            .iter()
+            .filter(|s| s.as_str() == "user.thumbnails")
+            .count();
+        assert_eq!(count, 1, "user.thumbnails should appear exactly once");
+    }
+
+    #[test]
+    fn order_follows_input_targets() {
+        // Naming a specific cleaner before @user means it appears first; @user
+        // then contributes the remaining user-group cleaners.
+        let resolved = resolve_targets(&["thumbnails", "@user"]);
+        let names = ids(&resolved);
+        assert_eq!(names.first().map(String::as_str), Some("user.thumbnails"));
+    }
+
+    #[test]
+    fn empty_target_list_returns_empty() {
+        assert!(resolve_targets(&[]).is_empty());
+    }
+}

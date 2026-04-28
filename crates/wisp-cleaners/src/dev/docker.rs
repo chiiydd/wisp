@@ -87,3 +87,45 @@ static META: DockerMeta = DockerMeta;
 
 #[linkme::distributed_slice(CLEANERS)]
 static ENTRY: CleanerEntry = CleanerEntry { meta: &META, plan };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_plain_kb() {
+        assert_eq!(parse_size_token("512KB"), Some(512 * 1_024));
+    }
+
+    #[test]
+    fn parses_decimal_mb_with_iec_suffix() {
+        assert_eq!(
+            parse_size_token("1.5MiB"),
+            Some((1.5 * 1_024.0 * 1_024.0) as u64)
+        );
+    }
+
+    #[test]
+    fn parses_gigabyte_lowercase_input() {
+        // parse_size_token uppercases the suffix internally.
+        assert_eq!(parse_size_token("2gb"), Some(2 * 1_024 * 1_024 * 1_024));
+    }
+
+    #[test]
+    fn unitless_token_parses_as_bytes() {
+        assert_eq!(parse_size_token("4096"), Some(4096));
+    }
+
+    #[test]
+    fn unknown_suffix_falls_back_to_bytes() {
+        // "100tonnes" → 100 (ignores the unrecognised suffix and treats
+        // the leading numeric part as bytes).
+        assert_eq!(parse_size_token("100tonnes"), Some(100));
+    }
+
+    #[test]
+    fn rejects_token_without_leading_digits() {
+        assert!(parse_size_token("notasize").is_none());
+        assert!(parse_size_token("").is_none());
+    }
+}
