@@ -34,15 +34,23 @@ pub enum CleanGroup {
     System,
     User,
     Dev,
+    /// Bundled LinuxQQ targets — covers both `linuxqq_cache` (Safe) and
+    /// `linuxqq_media` (Dangerous) so the user can review them together
+    /// in the plan view and skip the dangerous half if they want.
+    LinuxQq,
 }
 
 impl CleanGroup {
-    pub fn as_target(&self) -> &'static str {
+    /// Targets passed to `Engine::build_plan`. Returns a slice so a
+    /// single menu entry can resolve to multiple cleaner ids — used for
+    /// `LinuxQq`, which bundles two cleaners.
+    pub fn as_targets(&self) -> &'static [&'static str] {
         match self {
-            CleanGroup::All => "@all",
-            CleanGroup::System => "@system",
-            CleanGroup::User => "@user",
-            CleanGroup::Dev => "@dev",
+            CleanGroup::All => &["@all"],
+            CleanGroup::System => &["@system"],
+            CleanGroup::User => &["@user"],
+            CleanGroup::Dev => &["@dev"],
+            CleanGroup::LinuxQq => &["linuxqq_cache", "linuxqq_media"],
         }
     }
 
@@ -52,6 +60,7 @@ impl CleanGroup {
             CleanGroup::System => "System",
             CleanGroup::User => "User",
             CleanGroup::Dev => "Dev",
+            CleanGroup::LinuxQq => "LinuxQQ",
         }
     }
 }

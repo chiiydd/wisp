@@ -40,7 +40,7 @@ const MENU_ITEMS: &[MenuItem] = &[
     },
     MenuItem {
         label: "Quick Clean (User)",
-        desc: "browser cache · trash · thumbnails",
+        desc: "browser · QQ · trash · thumbnails",
         action: MenuAction::Clean(CleanGroup::User),
     },
     MenuItem {
@@ -52,6 +52,11 @@ const MENU_ITEMS: &[MenuItem] = &[
         label: "Quick Clean (Dev)",
         desc: "cargo · npm · pip · go · docker",
         action: MenuAction::Clean(CleanGroup::Dev),
+    },
+    MenuItem {
+        label: "Quick Clean (LinuxQQ)",
+        desc: "QQ caches + chat media (skips chat history)",
+        action: MenuAction::Clean(CleanGroup::LinuxQq),
     },
     MenuItem {
         label: "History",

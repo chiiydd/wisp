@@ -398,6 +398,7 @@ impl CleanerPage {
                 ("Trash can", "~/.local/share/Trash"),
                 ("Browser cache", "Chromium · Firefox · Brave"),
                 ("Thumbnail cache", "~/.cache/thumbnails"),
+                ("LinuxQQ caches", "~/.config/QQ shell + logs"),
                 ("Flatpak runtimes", "unused versions"),
             ],
             CleanGroup::System => &[
@@ -413,15 +414,17 @@ impl CleanerPage {
                 ("Go module cache", "~/go/pkg/mod"),
                 ("Docker", "dangling images & build cache"),
             ],
+            CleanGroup::LinuxQq => &[
+                ("LinuxQQ caches", "Electron shell · logs · partials (Safe)"),
+                (
+                    "LinuxQQ chat media",
+                    "Pic · Video · Ptt · File · Emoji · avatar (Dangerous)",
+                ),
+            ],
             CleanGroup::All => &[("All cleaners", "@user + @system + @dev")],
         };
 
-        let group_label = match &self.group {
-            CleanGroup::User => "User",
-            CleanGroup::System => "System",
-            CleanGroup::Dev => "Dev",
-            CleanGroup::All => "All",
-        };
+        let group_label = self.group.label();
 
         let cleaner_items: Vec<ListItem> = cleaners
             .iter()
@@ -1010,11 +1013,11 @@ impl CleanerPage {
 
     async fn build_plan(&mut self, dry_run: bool) {
         self.run_state = RunState::Building;
-        let target = self.group.as_target();
+        let targets = self.group.as_targets();
         let mut config = self.engine.config.clone();
         config.dry_run = dry_run;
         let engine = Engine::new(config, Arc::clone(&self.engine.distro));
-        match engine.build_plan(&[target]).await {
+        match engine.build_plan(targets).await {
             Ok(plan) => {
                 self.plan = Some(plan);
                 self.skipped.clear();
