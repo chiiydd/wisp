@@ -90,7 +90,23 @@ static ENTRY: CleanerEntry = CleanerEntry { meta: &META, plan };
 
 #[cfg(test)]
 mod tests {
+    //! Two layers of testing for the docker cleaner:
+    //!
+    //! 1. **Pure parsers** (`parse_size_token`) — fully covered with edge
+    //!    cases. These are the most error-prone bits because docker's
+    //!    `--format {{.Reclaimable}}` output isn't a stable contract.
+    //!
+    //! 2. **Plan structure** — exercises `plan()` against the real
+    //!    environment. The contract is: emit a single `RunExternal` for
+    //!    `docker system prune -f` when docker is on `$PATH`, else emit
+    //!    nothing. We do NOT execute the prune command in tests — that
+    //!    would mutate real docker state, isn't reproducible across CI
+    //!    runners, and is the engine's `exec_action` job, not ours.
     use super::*;
+    use crate::CleanCtx;
+    use std::sync::Arc;
+
+    // ── parse_size_token edge cases ─────────────────────────────────────
 
     #[test]
     fn parses_plain_kb() {
@@ -127,5 +143,48 @@ mod tests {
     fn rejects_token_without_leading_digits() {
         assert!(parse_size_token("notasize").is_none());
         assert!(parse_size_token("").is_none());
+    }
+
+    // ── Plan-structure tests ────────────────────────────────────────────
+
+    fn make_ctx() -> CleanCtx {
+        CleanCtx {
+            dry_run: true,
+            distro: Arc::from(wisp_platform::detect_distro()),
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_is_empty_when_docker_not_on_path() {
+        // Skip the test if docker IS installed — we can't synthesise its
+        // absence without mutating $PATH globally, which would race with
+        // other tests.
+        if crate::binary_exists("docker") {
+            return;
+        }
+        let ctx = make_ctx();
+        let actions = plan(&ctx).await.unwrap();
+        assert!(actions.is_empty(), "no docker → no actions");
+    }
+
+    #[tokio::test]
+    async fn plan_emits_run_external_with_expected_args_when_docker_present() {
+        if !crate::binary_exists("docker") {
+            // Conditionally skip on machines without docker. The empty-case
+            // is covered by the sibling test.
+            return;
+        }
+        let ctx = make_ctx();
+        let actions = plan(&ctx).await.unwrap();
+        assert_eq!(actions.len(), 1, "exactly one external action");
+        match &actions[0] {
+            CleanAction::RunExternal { cmd, .. } => {
+                assert_eq!(cmd.program, "docker");
+                assert_eq!(cmd.args, vec!["system", "prune", "-f"]);
+            }
+            CleanAction::Delete { .. } => {
+                panic!("docker cleaner must emit RunExternal, not Delete")
+            }
+        }
     }
 }

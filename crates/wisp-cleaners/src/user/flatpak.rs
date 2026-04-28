@@ -51,3 +51,41 @@ static META: FlatpakMeta = FlatpakMeta;
 
 #[linkme::distributed_slice(CLEANERS)]
 static ENTRY: CleanerEntry = CleanerEntry { meta: &META, plan };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::CleanCtx;
+    use std::sync::Arc;
+
+    fn make_ctx() -> CleanCtx {
+        CleanCtx {
+            dry_run: true,
+            distro: Arc::from(wisp_platform::detect_distro()),
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_empty_when_flatpak_missing() {
+        if crate::binary_exists("flatpak") {
+            return;
+        }
+        assert!(plan(&make_ctx()).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn plan_emits_uninstall_unused_when_flatpak_present() {
+        if !crate::binary_exists("flatpak") {
+            return;
+        }
+        let actions = plan(&make_ctx()).await.unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            CleanAction::RunExternal { cmd, .. } => {
+                assert_eq!(cmd.program, "flatpak");
+                assert_eq!(cmd.args, vec!["uninstall", "--unused", "-y"]);
+            }
+            CleanAction::Delete { .. } => panic!("flatpak cleaner must emit RunExternal"),
+        }
+    }
+}
