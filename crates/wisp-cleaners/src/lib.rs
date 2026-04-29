@@ -19,6 +19,22 @@ pub mod dev;
 pub mod system;
 pub mod user;
 
+/// Push a `Delete` action if `path` exists.  Resolves size via
+/// `wisp_core::trash::path_size` and converts to `Utf8PathBuf`.
+pub fn push_delete(actions: &mut Vec<CleanAction>, path: PathBuf, via: DeletionVia) {
+    if !path.exists() {
+        return;
+    }
+    let size = wisp_core::trash::path_size(&path);
+    if let Ok(utf8) = Utf8PathBuf::from_path_buf(path) {
+        actions.push(CleanAction::Delete {
+            path: utf8,
+            size,
+            via,
+        });
+    }
+}
+
 // ─── Shared helpers (used by L3 cleaners) ─────────────────────────────────────
 //
 // Several cleaners repeat the same boilerplate: `dirs::home_dir()` lookup,

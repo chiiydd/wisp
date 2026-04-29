@@ -19,7 +19,6 @@
 
 use std::path::{Path, PathBuf};
 
-use camino::Utf8PathBuf;
 use wisp_core::types::{CleanAction, CleanerGroup, CleanerId, CleanerMeta, DeletionVia, RiskLevel};
 use wisp_platform::Distro;
 
@@ -153,19 +152,7 @@ fn firefox_profiles(root: &Path) -> Vec<PathBuf> {
 
 // ─── Action builders ──────────────────────────────────────────────────────────
 
-fn push_delete(actions: &mut Vec<CleanAction>, path: PathBuf, via: DeletionVia) {
-    if !path.exists() {
-        return;
-    }
-    let size = wisp_core::trash::path_size(&path);
-    if let Ok(utf8) = Utf8PathBuf::from_path_buf(path) {
-        actions.push(CleanAction::Delete {
-            path: utf8,
-            size,
-            via,
-        });
-    }
-}
+use crate::push_delete;
 
 fn collect_cache_actions(home: &Path) -> Vec<CleanAction> {
     let mut actions = Vec::new();

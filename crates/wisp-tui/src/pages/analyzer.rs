@@ -44,7 +44,7 @@ use crate::chrome::KeyHint;
 use crate::theme::Theme;
 use crate::widgets::confirm::{ConfirmDialog, ConfirmResult};
 
-use super::PageAction;
+use super::{PageAction, short_path};
 
 // ─── Entry ───────────────────────────────────────────────────────────────────
 
@@ -1185,15 +1185,4 @@ impl AnalyzerPage {
         h.push(KeyHint::new("q", "quit"));
         h
     }
-}
-
-/// Display a path with `$HOME → ~`.
-fn short_path(p: &Utf8Path) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    if !home.is_empty()
-        && let Some(rel) = p.as_str().strip_prefix(&home)
-    {
-        return format!("~{rel}");
-    }
-    p.to_string()
 }

@@ -30,7 +30,7 @@ use crate::chrome::KeyHint;
 use crate::theme::Theme;
 use crate::widgets::confirm::ConfirmDialog;
 
-use super::{CleanGroup, PageAction};
+use super::{CleanGroup, PageAction, short_path};
 
 // ─── State machine ────────────────────────────────────────────────────────────
 
@@ -137,17 +137,6 @@ fn categorize_path(path: &Utf8Path) -> &'static str {
         "tmp" | "temp" | "bak" | "swp" | "old" => "Temp",
         _ => "Other",
     }
-}
-
-/// Shorten `path` by replacing `$HOME` with `~`.
-fn short_path(path: &Utf8Path) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    if !home.is_empty()
-        && let Some(rel) = path.as_str().strip_prefix(&home)
-    {
-        return format!("~{rel}");
-    }
-    path.to_string()
 }
 
 /// Truncate a string to `max` chars, preserving the tail with an ellipsis.

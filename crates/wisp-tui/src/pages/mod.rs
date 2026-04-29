@@ -22,6 +22,17 @@ use wisp_engine::Engine;
 
 use crate::chrome::KeyHint;
 
+/// Shorten `path` by replacing `$HOME` with `~`.
+pub fn short_path(path: &camino::Utf8Path) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    if !home.is_empty()
+        && let Some(rel) = path.as_str().strip_prefix(&home)
+    {
+        return format!("~{rel}");
+    }
+    path.to_string()
+}
+
 use self::analyzer::AnalyzerPage;
 use self::cleaner::CleanerPage;
 use self::history::HistoryPage;
