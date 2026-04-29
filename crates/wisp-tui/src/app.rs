@@ -8,7 +8,7 @@ use ratatui::Terminal;
 use ratatui::backend::Backend;
 use ratatui::layout::{Constraint, Direction, Layout};
 
-use wisp_core::CoreResult;
+use wisp_engine::CoreResult;
 use wisp_engine::Engine;
 
 use crate::chrome;
@@ -58,9 +58,9 @@ impl App {
                         chrome::render_statusline(f, chunks[2], &mode, mode_color, context, &hints);
                     }
                 })
-                .map_err(|e| wisp_core::CoreError::Io(std::io::Error::other(e.to_string())))?;
+                .map_err(|e| wisp_engine::CoreError::Io(std::io::Error::other(e.to_string())))?;
 
-            if !event::poll(Duration::from_millis(100)).map_err(wisp_core::CoreError::Io)? {
+            if !event::poll(Duration::from_millis(100)).map_err(wisp_engine::CoreError::Io)? {
                 // Allow pages to tick (e.g. progress animations)
                 if let Some(page) = self.page_stack.last_mut() {
                     page.tick();
@@ -68,7 +68,7 @@ impl App {
                 continue;
             }
 
-            let evt = event::read().map_err(wisp_core::CoreError::Io)?;
+            let evt = event::read().map_err(wisp_engine::CoreError::Io)?;
 
             // Global quit bindings
             if let Event::Key(k) = &evt

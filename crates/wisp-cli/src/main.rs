@@ -36,19 +36,19 @@ async fn run(cli: cli::Cli) -> Result<i32> {
     init_tracing(cli.global.verbose, cli.global.quiet, cli.global.no_color)?;
 
     let cfg = match &cli.global.config {
-        Some(p) => wisp_core::config::Config::load_from(p)?,
-        None => wisp_core::config::Config::load()?,
+        Some(p) => wisp_engine::config::Config::load_from(p)?,
+        None => wisp_engine::config::Config::load()?,
     };
 
-    let distro = Arc::from(wisp_platform::detect_distro());
+    let distro = Arc::from(wisp_engine::detect_distro());
 
     let engine_cfg = wisp_engine::EngineConfig {
         dry_run: cli.global.dry_run,
         prefer_trash: cfg.clean.prefer_trash,
         auto_approve_up_to: if cli.global.yes {
-            wisp_core::types::RiskLevel::Moderate
+            wisp_engine::types::RiskLevel::Moderate
         } else {
-            wisp_core::types::RiskLevel::Safe
+            wisp_engine::types::RiskLevel::Safe
         },
     };
     let engine = Arc::new(wisp_engine::Engine::new(engine_cfg, distro));
@@ -142,14 +142,14 @@ async fn dispatch_clean(
     match global.output {
         cli::OutputFormat::Human => print_plan_human(&plan, global.dry_run),
         cli::OutputFormat::Json => {
-            let env = wisp_core::types::OutputEnvelope::new(format!("clean {target}"), &plan);
+            let env = wisp_engine::types::OutputEnvelope::new(format!("clean {target}"), &plan);
             println!("{}", serde_json::to_string_pretty(&env)?);
         }
         cli::OutputFormat::Jsonl => {
-            let summary = wisp_core::types::CleanPlanSummary::from(&plan);
+            let summary = wisp_engine::types::CleanPlanSummary::from(&plan);
             println!(
                 "{}",
-                serde_json::to_string(&wisp_core::types::ProgressEvent::PlanBuilt(summary))?
+                serde_json::to_string(&wisp_engine::types::ProgressEvent::PlanBuilt(summary))?
             );
         }
     }
@@ -160,7 +160,7 @@ async fn dispatch_clean(
     }
 
     // Choose confirmer
-    let cfm: Arc<dyn wisp_core::types::Confirmer> = if global.yes {
+    let cfm: Arc<dyn wisp_engine::types::Confirmer> = if global.yes {
         Arc::new(confirmer::AutoConfirmer {
             approve_dangerous: false,
         })
@@ -239,7 +239,7 @@ fn print_cleaner_info(target: &str) -> i32 {
     }
 }
 
-fn print_plan_human(plan: &wisp_core::types::CleanPlan, dry_run: bool) {
+fn print_plan_human(plan: &wisp_engine::types::CleanPlan, dry_run: bool) {
     let prefix = if dry_run { "[DRY RUN] " } else { "" };
     println!(
         "\n{}Plan  {}  risk={:?}  actions={}",
@@ -251,14 +251,14 @@ fn print_plan_human(plan: &wisp_core::types::CleanPlan, dry_run: bool) {
     println!("{}", "─".repeat(60));
     for action in &plan.actions {
         match action {
-            wisp_core::types::CleanAction::Delete { path, size, via } => {
+            wisp_engine::types::CleanAction::Delete { path, size, via } => {
                 println!(
                     "  DELETE  {:>10}  {:?}  {path}",
                     humansize::format_size(*size, humansize::DECIMAL),
                     via,
                 );
             }
-            wisp_core::types::CleanAction::RunExternal {
+            wisp_engine::types::CleanAction::RunExternal {
                 cmd,
                 estimated_size,
             } => {
@@ -281,8 +281,8 @@ fn print_plan_human(plan: &wisp_core::types::CleanPlan, dry_run: bool) {
     );
 }
 
-fn print_event_human(event: &wisp_core::types::ProgressEvent) {
-    use wisp_core::types::ProgressEvent as E;
+fn print_event_human(event: &wisp_engine::types::ProgressEvent) {
+    use wisp_engine::types::ProgressEvent as E;
     match event {
         E::PlanBuilt(s) => println!(
             "  Plan built  {} actions  ~{}",
@@ -298,7 +298,7 @@ fn print_event_human(event: &wisp_core::types::ProgressEvent) {
             );
         }
         E::ActionFinished { id, result } => {
-            use wisp_core::types::ActionResult as R;
+            use wisp_engine::types::ActionResult as R;
             match result {
                 R::Success { bytes_freed } => println!(
                     "\r  [{:>4}] ✓  {}",
@@ -322,7 +322,7 @@ fn print_event_human(event: &wisp_core::types::ProgressEvent) {
     }
 }
 
-fn print_report_human(r: &wisp_core::types::CleanReport) {
+fn print_report_human(r: &wisp_engine::types::CleanReport) {
     println!(
         "\nFreed {}  ({} ok, {} skipped, {} failed)",
         humansize::format_size(r.bytes_freed, humansize::DECIMAL),
@@ -335,7 +335,7 @@ fn print_report_human(r: &wisp_core::types::CleanReport) {
 // ─── analyze ─────────────────────────────────────────────────────────────────
 
 async fn dispatch_analyze(args: cli::AnalyzeArgs) -> Result<i32> {
-    use wisp_core::scanner::{ScanOptions, format_flat, format_tree, scan_directory};
+    use wisp_engine::scanner::{ScanOptions, format_flat, format_tree, scan_directory};
 
     let raw_path = args
         .path
@@ -443,13 +443,13 @@ fn dispatch_state(args: cli::StateArgs) -> Result<i32> {
 fn dispatch_config(args: cli::ConfigArgs) -> Result<i32> {
     match args.command {
         None | Some(cli::ConfigSubcommand::Path) => {
-            match wisp_core::config::Config::config_path() {
+            match wisp_engine::config::Config::config_path() {
                 Some(p) => println!("{}", p.display()),
                 None => eprintln!("Cannot determine config path."),
             }
         }
         Some(cli::ConfigSubcommand::Show { key: None }) => {
-            let cfg = wisp_core::config::Config::load()?;
+            let cfg = wisp_engine::config::Config::load()?;
             print!(
                 "{}",
                 toml::to_string_pretty(&cfg).map_err(|e| eyre!("{e}"))?
@@ -459,7 +459,7 @@ fn dispatch_config(args: cli::ConfigArgs) -> Result<i32> {
             eprintln!("Show key '{k}': not yet implemented.");
         }
         Some(cli::ConfigSubcommand::Edit) => {
-            let path = wisp_core::config::Config::config_path()
+            let path = wisp_engine::config::Config::config_path()
                 .ok_or_else(|| eyre!("Cannot find config path"))?;
             let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nano".into());
             std::process::Command::new(&editor).arg(&path).status()?;
@@ -484,7 +484,7 @@ fn dispatch_profile(_args: cli::ProfileArgs) -> Result<i32> {
 // ─── doctor ──────────────────────────────────────────────────────────────────
 
 fn dispatch_doctor() -> Result<i32> {
-    let distro = wisp_platform::detect_distro();
+    let distro = wisp_engine::detect_distro();
 
     println!("─── wisp doctor ───────────────────────────────────────────────");
     println!("  Distribution:  {} (id={})", distro.name(), distro.id());
@@ -493,7 +493,7 @@ fn dispatch_doctor() -> Result<i32> {
     println!("  wisp version:  {}", env!("CARGO_PKG_VERSION"));
 
     // Config
-    match wisp_core::config::Config::config_path() {
+    match wisp_engine::config::Config::config_path() {
         Some(p) => {
             let status = if p.exists() {
                 "found"
@@ -506,7 +506,7 @@ fn dispatch_doctor() -> Result<i32> {
     }
 
     // State dir
-    match wisp_core::config::Config::state_dir() {
+    match wisp_engine::config::Config::state_dir() {
         Some(p) => {
             let status = if p.exists() {
                 "found"

@@ -4,7 +4,7 @@ use std::future::Future;
 use std::io::{self, Write};
 use std::pin::Pin;
 
-use wisp_core::types::{ConfirmRequest, Confirmation, RiskLevel};
+use wisp_engine::types::{ConfirmRequest, Confirmation, RiskLevel};
 
 // ─── Auto-approve confirmer (-y flag) ────────────────────────────────────────
 
@@ -14,7 +14,7 @@ pub struct AutoConfirmer {
     pub approve_dangerous: bool,
 }
 
-impl wisp_core::types::Confirmer for AutoConfirmer {
+impl wisp_engine::types::Confirmer for AutoConfirmer {
     fn ask<'a>(
         &'a self,
         req: ConfirmRequest,
@@ -33,7 +33,7 @@ impl wisp_core::types::Confirmer for AutoConfirmer {
 /// Prompts the user via stdin/stdout.
 pub struct CliConfirmer;
 
-impl wisp_core::types::Confirmer for CliConfirmer {
+impl wisp_engine::types::Confirmer for CliConfirmer {
     fn ask<'a>(
         &'a self,
         req: ConfirmRequest,

@@ -11,17 +11,25 @@ use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use wisp_cleaners::{CLEANERS, CleanCtx, CleanerEntry};
-use wisp_core::CoreResult;
 use wisp_core::types::{
     ActionId, ActionResult, CleanAction, CleanPlan, CleanPlanSummary, CleanReport, CleanerGroup,
     ConfirmRequest, Confirmation, DeletionVia, Privileges, ProgressEvent, RiskLevel,
 };
-use wisp_platform::Distro;
 
 pub mod audit;
 pub mod history;
 
 pub use wisp_cleaners::all_cleaners;
+
+// ─── Re-exports for L5 consumers ─────────────────────────────────────────────
+// L5 crates (wisp-tui, wisp-cli) must not depend on wisp-core or wisp-platform
+// directly — everything they need is re-exported here.
+pub use wisp_core::config;
+pub use wisp_core::scanner;
+pub use wisp_core::types;
+pub use wisp_core::{CoreError, CoreResult};
+pub use wisp_platform::detect_distro;
+pub use wisp_platform::{Distro, DistroKind};
 
 // ─── Built-in confirmers ──────────────────────────────────────────────────────
 

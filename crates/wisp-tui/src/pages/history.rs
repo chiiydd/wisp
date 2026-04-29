@@ -8,8 +8,8 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
 
-use wisp_core::types::CleanReport;
 use wisp_engine::history;
+use wisp_engine::types::CleanReport;
 
 use crate::chrome::KeyHint;
 use crate::theme::Theme;

@@ -23,8 +23,8 @@ use ratatui::widgets::{
     ScrollbarOrientation, ScrollbarState,
 };
 
-use wisp_core::types::{ActionResult, CleanAction, CleanPlan, ProgressEvent, RiskLevel};
 use wisp_engine::Engine;
+use wisp_engine::types::{ActionResult, CleanAction, CleanPlan, ProgressEvent, RiskLevel};
 
 use crate::chrome::KeyHint;
 use crate::theme::Theme;

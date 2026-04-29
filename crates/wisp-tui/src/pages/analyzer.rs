@@ -33,12 +33,12 @@ use ratatui::widgets::canvas::{Canvas, Points};
 use ratatui::widgets::{Block, BorderType, Borders, Gauge, List, ListItem, ListState, Paragraph};
 use uuid::Uuid;
 
-use wisp_core::CoreResult;
-use wisp_core::scanner::{ScanOptions, scan_directory};
-use wisp_core::types::{
+use wisp_engine::CoreResult;
+use wisp_engine::Engine;
+use wisp_engine::scanner::{ScanOptions, scan_directory};
+use wisp_engine::types::{
     CleanAction, CleanPlan, DeletionVia, Privileges, ProgressEvent, RiskLevel, ScanKey, ScanTree,
 };
-use wisp_engine::Engine;
 
 use crate::chrome::KeyHint;
 use crate::theme::Theme;
@@ -278,7 +278,7 @@ impl AnalyzerPage {
             match rx.try_recv() {
                 Ok(r) => Some(r),
                 Err(mpsc::TryRecvError::Empty) => None,
-                Err(mpsc::TryRecvError::Disconnected) => Some(Err(wisp_core::CoreError::Io(
+                Err(mpsc::TryRecvError::Disconnected) => Some(Err(wisp_engine::CoreError::Io(
                     std::io::Error::new(std::io::ErrorKind::BrokenPipe, "scan thread exited"),
                 ))),
             }
@@ -1007,9 +1007,9 @@ impl AnalyzerPage {
             if let ProgressEvent::ActionFinished { id, result } = evt {
                 let idx = id.0 as usize;
                 match result {
-                    wisp_core::types::ActionResult::Success { .. } => succeeded_idx.push(idx),
-                    wisp_core::types::ActionResult::Failed { .. } => failed_idx.push(idx),
-                    wisp_core::types::ActionResult::Skipped { .. } => failed_idx.push(idx),
+                    wisp_engine::types::ActionResult::Success { .. } => succeeded_idx.push(idx),
+                    wisp_engine::types::ActionResult::Failed { .. } => failed_idx.push(idx),
+                    wisp_engine::types::ActionResult::Skipped { .. } => failed_idx.push(idx),
                 }
             }
         }
