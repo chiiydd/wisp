@@ -35,6 +35,9 @@ async fn main() {
 async fn run(cli: cli::Cli) -> Result<i32> {
     init_tracing(cli.global.verbose, cli.global.quiet, cli.global.no_color)?;
 
+    let span = tracing::info_span!("wisp.run");
+    let _g = span.enter();
+
     let cfg = match &cli.global.config {
         Some(p) => wisp_engine::config::Config::load_from(p)?,
         None => wisp_engine::config::Config::load()?,

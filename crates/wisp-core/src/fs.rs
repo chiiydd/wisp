@@ -159,4 +159,77 @@ mod tests {
     fn normal_path_no_traversal() {
         assert!(check_no_traversal(Path::new("/home/user/.cache")).is_ok());
     }
+
+    // ─── Proptest ──────────────────────────────────────────────────────────────
+
+    use proptest::prelude::*;
+
+    /// Generate a random path component (no slashes, no `..`).
+    fn arb_component() -> impl Strategy<Value = String> {
+        "[a-z][a-z0-9_]{0,10}"
+    }
+
+    /// Generate a random absolute path with 1-6 components.
+    fn arb_abs_path() -> impl Strategy<Value = String> {
+        proptest::collection::vec(arb_component(), 1..6)
+            .prop_map(|parts| format!("/{}", parts.join("/")))
+    }
+
+    proptest! {
+        /// Any path containing `..` must be rejected by check_no_traversal.
+        #[test]
+        fn traversal_rejected(seed in "[a-z]{1,8}") {
+            // Build paths with .. injected at various positions
+            let base = format!("/home/{seed}/Documents");
+            let with_dotdot = format!("{base}/../etc");
+            prop_assert!(check_no_traversal(Path::new(&with_dotdot)).is_err());
+
+            // Leading ..
+            prop_assert!(check_no_traversal(Path::new("../etc")).is_err());
+
+            // Multiple ..
+            let multi = format!("{base}/../../root");
+            prop_assert!(check_no_traversal(Path::new(&multi)).is_err());
+        }
+
+        /// Paths without `..` must pass check_no_traversal.
+        #[test]
+        fn clean_paths_pass(path in arb_abs_path()) {
+            prop_assert!(check_no_traversal(Path::new(&path)).is_ok());
+        }
+
+        /// System prefix-blacklisted directories and their children are rejected.
+        #[test]
+        fn prefix_blacklist_rejected(child in arb_component()) {
+            for prefix in &["/etc", "/usr", "/bin", "/boot", "/sys", "/proc", "/dev"] {
+                // The prefix itself
+                prop_assert!(check_blacklist(Path::new(prefix)).is_err());
+                // A child under the prefix
+                let child_path = format!("{prefix}/{child}");
+                prop_assert!(check_blacklist(Path::new(&child_path)).is_err());
+            }
+        }
+
+        /// Whitelisted paths under /var/cache/pacman/pkg are always allowed.
+        #[test]
+        fn pacman_cache_whitelisted(child in arb_component()) {
+            let path = format!("/var/cache/pacman/pkg/{child}");
+            prop_assert!(check_blacklist(Path::new(&path)).is_ok());
+        }
+
+        /// Home subdirectories (not home itself) are allowed.
+        #[test]
+        fn home_subdirs_allowed(user in arb_component(), child in arb_component()) {
+            let path = format!("/home/{user}/{child}");
+            prop_assert!(check_blacklist(Path::new(&path)).is_ok());
+        }
+
+        /// /tmp itself is blocked but children are allowed.
+        #[test]
+        fn tmp_children_allowed(child in arb_component()) {
+            prop_assert!(check_blacklist(Path::new("/tmp")).is_err());
+            let path = format!("/tmp/{child}");
+            prop_assert!(check_blacklist(Path::new(&path)).is_ok());
+        }
+    }
 }

@@ -201,6 +201,8 @@ impl Engine {
             let needs_confirm = !auto_approve_all && plan.risk > self.config.auto_approve_up_to;
 
             if needs_confirm {
+                let span = tracing::info_span!("wisp.confirm", id = id.0);
+                let _g = span.enter();
                 let req = ConfirmRequest {
                     plan_id: plan.id,
                     action: action.clone(),
@@ -226,7 +228,7 @@ impl Engine {
                 }
             }
 
-            let result = self.exec_action(action).await;
+            let result = self.exec_action(id, action).await;
 
             match result {
                 Ok(freed) => {
@@ -276,8 +278,8 @@ impl Engine {
 
     // ─── Single action execution ──────────────────────────────────────────────
 
-    #[instrument(name = "action", skip(self, action))]
-    async fn exec_action(&self, action: &CleanAction) -> CoreResult<u64> {
+    #[instrument(name = "action", skip(self, action), fields(id = action_id.0))]
+    async fn exec_action(&self, action_id: ActionId, action: &CleanAction) -> CoreResult<u64> {
         match action {
             CleanAction::Delete { path, size, via } => {
                 let std_path = path.as_std_path();
