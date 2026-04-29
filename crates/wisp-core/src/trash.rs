@@ -8,15 +8,14 @@ use std::path::Path;
 use tracing::instrument;
 
 use crate::errors::{CoreError, CoreResult};
-use crate::fs::check_blacklist;
+use crate::fs::validate_path;
 
 /// Move `path` to the OS trash can.
 ///
 /// When `dry_run` is `true` the operation is logged but the file is not moved.
 #[instrument(name = "fs.trash", skip(dry_run), fields(path = %path.display()))]
 pub fn send_to_trash(path: &Path, dry_run: bool) -> CoreResult<()> {
-    let canonical = path.canonicalize().map_err(CoreError::Io)?;
-    check_blacklist(&canonical)?;
+    let canonical = validate_path(path)?;
 
     if dry_run {
         tracing::debug!(path = %canonical.display(), "dry-run: would trash");
@@ -31,8 +30,7 @@ pub fn send_to_trash(path: &Path, dry_run: bool) -> CoreResult<()> {
 /// When `dry_run` is `true` the operation is logged but nothing is deleted.
 #[instrument(name = "fs.delete", skip(dry_run), fields(path = %path.display()))]
 pub fn delete_direct(path: &Path, dry_run: bool) -> CoreResult<()> {
-    let canonical = path.canonicalize().map_err(CoreError::Io)?;
-    check_blacklist(&canonical)?;
+    let canonical = validate_path(path)?;
 
     if dry_run {
         tracing::debug!(path = %canonical.display(), "dry-run: would delete");

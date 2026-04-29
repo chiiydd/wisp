@@ -343,6 +343,7 @@ async fn dispatch_analyze(args: cli::AnalyzeArgs) -> Result<i32> {
     let canonical = raw_path
         .canonicalize()
         .map_err(|e| eyre!("{e}: {}", raw_path.display()))?;
+    wisp_engine::fs::check_blacklist(&canonical).map_err(|e| eyre!("{e}"))?;
     let utf8 = camino::Utf8PathBuf::from_path_buf(canonical)
         .map_err(|p| eyre!("Path is not valid UTF-8: {}", p.display()))?;
 
@@ -405,8 +406,8 @@ fn dispatch_history(args: cli::HistoryArgs) -> Result<i32> {
                 }
             }
         }
-        cli::HistorySubcommand::Restore { .. } => {
-            eprintln!("Restore is only possible for entries deleted via trash (Phase 6).");
+        cli::HistorySubcommand::Undo { .. } => {
+            eprintln!("Undo is only possible for entries deleted via trash (Phase 6).");
         }
         cli::HistorySubcommand::Clear => {
             eprintln!("History clear not yet implemented.");
@@ -442,7 +443,7 @@ fn dispatch_state(args: cli::StateArgs) -> Result<i32> {
 
 fn dispatch_config(args: cli::ConfigArgs) -> Result<i32> {
     match args.command {
-        None | Some(cli::ConfigSubcommand::Path) => {
+        None | Some(cli::ConfigSubcommand::Info) => {
             match wisp_engine::config::Config::config_path() {
                 Some(p) => println!("{}", p.display()),
                 None => eprintln!("Cannot determine config path."),

@@ -10,11 +10,14 @@ pub fn append(report: &CleanReport) {
         && let Ok(line) = serde_json::to_string(report)
     {
         use std::io::Write;
-        let _ = std::fs::OpenOptions::new()
+        if let Err(e) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-            .and_then(|mut f| writeln!(f, "{line}"));
+            .and_then(|mut f| writeln!(f, "{line}"))
+        {
+            tracing::warn!(path = %path.display(), error = %e, "failed to append history entry");
+        }
     }
 }
 
@@ -26,12 +29,22 @@ pub fn read(limit: usize) -> Vec<CleanReport> {
     };
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
-        Err(_) => return Vec::new(),
+        Err(e) => {
+            tracing::debug!(path = %path.display(), error = %e, "failed to read history file");
+            return Vec::new();
+        }
     };
 
     let mut entries: Vec<CleanReport> = content
         .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
+        .enumerate()
+        .filter_map(|(i, line)| {
+            serde_json::from_str(line)
+                .map_err(|e| {
+                    tracing::debug!(line = i + 1, error = %e, "skipping malformed history entry");
+                })
+                .ok()
+        })
         .collect();
     entries.reverse();
     entries.truncate(limit);

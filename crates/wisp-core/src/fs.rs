@@ -43,8 +43,12 @@ static WHITELIST: &[&str] = &["/var/cache/pacman/pkg", "/var/log/journal"];
 
 /// Canonicalise `path` and verify it is safe to operate on.
 ///
+/// Checks for path-traversal components (`..`) before canonicalisation,
+/// then verifies the canonical path is not blacklisted.
+///
 /// Returns the canonicalised `PathBuf` on success.
 pub fn validate_path(path: &Path) -> CoreResult<PathBuf> {
+    check_no_traversal(path)?;
     let canonical = path.canonicalize().map_err(CoreError::Io)?;
     check_blacklist(&canonical)?;
     Ok(canonical)

@@ -25,6 +25,7 @@ pub use wisp_cleaners::all_cleaners;
 // L5 crates (wisp-tui, wisp-cli) must not depend on wisp-core or wisp-platform
 // directly — everything they need is re-exported here.
 pub use wisp_core::config;
+pub use wisp_core::fs;
 pub use wisp_core::scanner;
 pub use wisp_core::types;
 pub use wisp_core::{CoreError, CoreResult};

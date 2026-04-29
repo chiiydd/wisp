@@ -238,8 +238,8 @@ pub enum HistorySubcommand {
     },
     /// Show details of a history entry.
     Show { id: String },
-    /// Restore a trashed item.
-    Restore { id: String },
+    /// Undo (restore) a trashed item.
+    Undo { id: String },
     /// Clear all history.
     Clear,
 }
@@ -289,7 +289,7 @@ pub struct ConfigArgs {
 #[derive(Debug, Subcommand)]
 pub enum ConfigSubcommand {
     /// Print the path to the config file.
-    Path,
+    Info,
     /// Open the config file in $EDITOR.
     Edit,
     /// Show config values.
@@ -312,10 +312,10 @@ pub struct ProfileArgs {
 pub enum ProfileSubcommand {
     /// List profiles.
     List,
-    /// Create a new profile.
-    Create { name: String },
-    /// Delete a profile.
-    Delete { name: String },
+    /// Add a new profile.
+    Add { name: String },
+    /// Remove a profile.
+    Remove { name: String },
     /// Show a profile.
     Show { name: String },
     /// Set the active default profile.
