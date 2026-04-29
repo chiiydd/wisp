@@ -433,7 +433,11 @@ mod tests {
 
         let actions = collect_cache_actions(tmp.path());
         let paths = collect_paths(&actions);
-        assert!(paths.iter().any(|p| p.contains(".config/chromium") && p.ends_with("/Cache")));
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.contains(".config/chromium") && p.ends_with("/Cache"))
+        );
     }
 
     #[test]
