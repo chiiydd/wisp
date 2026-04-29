@@ -306,3 +306,237 @@ static ENTRY_STATE: CleanerEntry = CleanerEntry {
     meta: &META_STATE,
     plan: plan_state,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+    use wisp_core::types::CleanAction;
+
+    fn collect_paths(actions: &[CleanAction]) -> Vec<String> {
+        actions
+            .iter()
+            .map(|a| match a {
+                CleanAction::Delete { path, .. } => path.as_str().to_owned(),
+                _ => panic!("expected Delete"),
+            })
+            .collect()
+    }
+
+    // ─── chromium_profiles ───────────────────────────────────────────────────
+
+    #[test]
+    fn chromium_profiles_finds_default_and_numbered() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("Default")).unwrap();
+        fs::create_dir_all(tmp.path().join("Profile 1")).unwrap();
+        fs::create_dir_all(tmp.path().join("Guest Profile")).unwrap();
+        fs::create_dir_all(tmp.path().join("NotAProfile")).unwrap();
+
+        let profiles = chromium_profiles(tmp.path());
+        assert_eq!(profiles.len(), 3);
+        let names: Vec<_> = profiles
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains(&"Default".to_owned()));
+        assert!(names.contains(&"Profile 1".to_owned()));
+        assert!(names.contains(&"Guest Profile".to_owned()));
+    }
+
+    #[test]
+    fn chromium_profiles_skips_non_profile_dirs() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("Cache")).unwrap();
+        fs::create_dir_all(tmp.path().join("Dictionaries")).unwrap();
+
+        let profiles = chromium_profiles(tmp.path());
+        assert!(profiles.is_empty());
+    }
+
+    #[test]
+    fn chromium_profiles_skips_files() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("Default"), b"not a dir").unwrap();
+
+        let profiles = chromium_profiles(tmp.path());
+        assert!(profiles.is_empty());
+    }
+
+    // ─── firefox_profiles ────────────────────────────────────────────────────
+
+    #[test]
+    fn firefox_profiles_finds_prefs_js() {
+        let tmp = TempDir::new().unwrap();
+        let profile = tmp.path().join("abcdef.default");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("prefs.js"), b"// prefs").unwrap();
+
+        let profiles = firefox_profiles(tmp.path());
+        assert_eq!(profiles.len(), 1);
+    }
+
+    #[test]
+    fn firefox_profiles_finds_times_json() {
+        let tmp = TempDir::new().unwrap();
+        let profile = tmp.path().join("xyz.release");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("times.json"), b"{}").unwrap();
+
+        let profiles = firefox_profiles(tmp.path());
+        assert_eq!(profiles.len(), 1);
+    }
+
+    #[test]
+    fn firefox_profiles_skips_dirs_without_markers() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("crashreports")).unwrap();
+
+        let profiles = firefox_profiles(tmp.path());
+        assert!(profiles.is_empty());
+    }
+
+    // ─── collect_cache_actions ───────────────────────────────────────────────
+
+    #[test]
+    fn cache_actions_picks_up_chromium_cache_subdirs() {
+        let tmp = TempDir::new().unwrap();
+        // Chromium cache under $HOME/.cache/chromium/Default/
+        let profile = tmp.path().join(".cache/chromium/Default");
+        for sub in CHROMIUM_CACHE_SUBDIRS {
+            fs::create_dir_all(profile.join(sub)).unwrap();
+            fs::write(profile.join(sub).join("data"), b"x").unwrap();
+        }
+
+        let actions = collect_cache_actions(tmp.path());
+        let paths = collect_paths(&actions);
+        assert!(!paths.is_empty());
+        assert!(paths.iter().any(|p| p.ends_with("/Cache")));
+        assert!(paths.iter().any(|p| p.ends_with("/GPUCache")));
+        // All should use Direct deletion.
+        for a in &actions {
+            let CleanAction::Delete { via, .. } = a else {
+                panic!("expected Delete");
+            };
+            assert_eq!(*via, DeletionVia::Direct);
+        }
+    }
+
+    #[test]
+    fn cache_actions_picks_up_chromium_config_cache() {
+        let tmp = TempDir::new().unwrap();
+        // Chromium also stores caches in $HOME/.config/chromium/Default/
+        let profile = tmp.path().join(".config/chromium/Default");
+        fs::create_dir_all(profile.join("Cache")).unwrap();
+        fs::write(profile.join("Cache/data"), b"x").unwrap();
+
+        let actions = collect_cache_actions(tmp.path());
+        let paths = collect_paths(&actions);
+        assert!(paths.iter().any(|p| p.contains(".config/chromium") && p.ends_with("/Cache")));
+    }
+
+    #[test]
+    fn cache_actions_picks_up_firefox_cache() {
+        let tmp = TempDir::new().unwrap();
+        // Firefox stores cache under ~/.cache/mozilla/firefox/<profile>/.
+        // The profile directory needs a marker file (prefs.js) so
+        // firefox_profiles() can detect it.
+        let profile = tmp.path().join(".cache/mozilla/firefox/abc.default");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("prefs.js"), b"// prefs").unwrap();
+        for sub in FIREFOX_CACHE_SUBDIRS_PROFILE {
+            fs::create_dir_all(profile.join(sub)).unwrap();
+            fs::write(profile.join(sub).join("data"), b"x").unwrap();
+        }
+
+        let actions = collect_cache_actions(tmp.path());
+        let paths = collect_paths(&actions);
+        assert!(paths.iter().any(|p| p.ends_with("/cache2")));
+        assert!(paths.iter().any(|p| p.ends_with("/startupCache")));
+    }
+
+    #[test]
+    fn cache_actions_empty_without_profiles() {
+        let tmp = TempDir::new().unwrap();
+        let actions = collect_cache_actions(tmp.path());
+        assert!(actions.is_empty());
+    }
+
+    // ─── collect_state_actions ───────────────────────────────────────────────
+
+    #[test]
+    fn state_actions_picks_up_chromium_state() {
+        let tmp = TempDir::new().unwrap();
+        let profile = tmp.path().join(".config/chromium/Default");
+        for sub in CHROMIUM_STATE_PATHS {
+            fs::create_dir_all(profile.join(sub)).unwrap();
+            fs::write(profile.join(sub).join("data"), b"x").unwrap();
+        }
+
+        let actions = collect_state_actions(tmp.path());
+        let paths = collect_paths(&actions);
+        assert!(!paths.is_empty());
+        assert!(paths.iter().any(|p| p.ends_with("/Cookies")));
+        assert!(paths.iter().any(|p| p.ends_with("/IndexedDB")));
+        // All state actions use Trash deletion.
+        for a in &actions {
+            let CleanAction::Delete { via, .. } = a else {
+                panic!("expected Delete");
+            };
+            assert_eq!(*via, DeletionVia::Trash);
+        }
+    }
+
+    #[test]
+    fn state_actions_picks_up_firefox_state() {
+        let tmp = TempDir::new().unwrap();
+        let profile = tmp.path().join(".mozilla/firefox/abc.default");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("prefs.js"), b"// prefs").unwrap();
+        for sub in FIREFOX_STATE_PATHS {
+            fs::create_dir_all(profile.join(sub)).unwrap();
+            fs::write(profile.join(sub).join("data"), b"x").unwrap();
+        }
+
+        let actions = collect_state_actions(tmp.path());
+        let paths = collect_paths(&actions);
+        assert!(paths.iter().any(|p| p.ends_with("/cookies.sqlite")));
+        assert!(paths.iter().any(|p| p.ends_with("/sessionstore.jsonlz4")));
+    }
+
+    #[test]
+    fn state_never_touches_passwords_bookmarks_history() {
+        let tmp = TempDir::new().unwrap();
+        let profile = tmp.path().join(".config/chromium/Default");
+        // Create user data that must NOT be touched.
+        fs::create_dir_all(profile.join("Login Data")).unwrap();
+        fs::write(profile.join("Login Data/logins"), b"passwords").unwrap();
+        fs::create_dir_all(profile.join("Bookmarks")).unwrap();
+        fs::write(profile.join("Bookmarks/bookmarks"), b"bookmarks").unwrap();
+        fs::create_dir_all(profile.join("History")).unwrap();
+        fs::write(profile.join("History/history"), b"history").unwrap();
+        // Also create some state that SHOULD be picked up.
+        fs::write(profile.join("Cookies"), b"cookies").unwrap();
+
+        let actions = collect_state_actions(tmp.path());
+        let paths = collect_paths(&actions);
+        // Verify state is collected.
+        assert!(paths.iter().any(|p| p.ends_with("/Cookies")));
+        // Verify passwords/bookmarks/history are never targeted.
+        for p in &paths {
+            assert!(!p.contains("Login Data"), "must not touch passwords: {p}");
+            assert!(!p.contains("Bookmarks"), "must not touch bookmarks: {p}");
+            // History as a state path isn't in CHROMIUM_STATE_PATHS, so it
+            // won't appear. But verify anyway for safety.
+            assert!(!p.contains("/History"), "must not touch history: {p}");
+        }
+    }
+
+    #[test]
+    fn state_actions_empty_without_profiles() {
+        let tmp = TempDir::new().unwrap();
+        let actions = collect_state_actions(tmp.path());
+        assert!(actions.is_empty());
+    }
+}
