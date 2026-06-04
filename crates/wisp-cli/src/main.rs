@@ -231,9 +231,9 @@ fn print_cleaner_list(group: Option<&str>, risk: Option<&str>) {
 }
 
 fn print_cleaner_info(target: &str) -> i32 {
-    let cleaners = wisp_engine::all_cleaners();
-    match cleaners.iter().find(|e| e.meta.id().as_str() == target) {
-        Some(entry) => {
+    let entries = wisp_engine::resolve_targets(&[target]);
+    match entries.as_slice() {
+        [entry] => {
             let m = entry.meta;
             println!("ID          {}", m.id());
             println!("Name        {}", m.name());
@@ -243,9 +243,17 @@ fn print_cleaner_info(target: &str) -> i32 {
             println!("Description {}", m.description());
             0
         }
-        None => {
+        [] => {
             eprintln!("Cleaner '{target}' not found. Try: wisp clean list");
             1
+        }
+        matches => {
+            eprintln!("Target '{target}' matched multiple cleaners:");
+            for entry in matches {
+                eprintln!("  {}", entry.meta.id());
+            }
+            eprintln!("Use a full cleaner ID. Try: wisp clean list");
+            64
         }
     }
 }
