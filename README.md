@@ -21,7 +21,7 @@ CLI + TUI 一体的磁盘清理工具：清 `pacman` 缓存、journal、孤儿�
 - **一键清理**：`wisp clean @user / @system / @dev / @all`，默认 dry-run，安全可预览。
 - **分目标清理器**：pacman、paccache、orphans、journal、/tmp、回收站、浏览器缓存、缩略图、cargo、npm、pip、go、flatpak、docker。
 - **交互 TUI**：neovim 风格 chrome，模式徽章、状态栏键位提示；按 `v` 在柱状图与极坐标扇形图之间切换。
-- **默认安全**：三档风险（Safe / Moderate / Dangerous），显式确认，硬编码路径黑名单，删除默认走回收站，`--purge` 才永久删除。
+- **默认安全**：三档风险（Safe / Moderate / Dangerous），显式确认，硬编码路径黑名单，删除默认走回收站，`--no-trash`（兼容别名 `--purge`）才永久删除。
 - **流式输出**：`--output json|jsonl` 适配脚本，`human` 适配终端阅读。
 - **审计与回退**：每次删除都记录大小、目标与时间戳，`wisp history list` / `restore` 可查可回退。
 - **shell 补全 + man page**：`wisp completion zsh`、`wisp man` 一键生成。
@@ -117,7 +117,7 @@ wisp [--output human|json|jsonl]
 
 - 硬编码黑名单（`/`、`/etc`、`/usr`、`/home`、`/var`…）在到达执行器前直接拒绝。
 - 三档风险等级；**Dangerous** 级别的清理器即便确认过仍要求显式 `--yes`。
-- 删除默认走系统回收站；如需永久删除请加 `--purge`。
+- 删除默认走系统回收站；如需永久删除请加 `--no-trash`（兼容别名 `--purge`）。
 - `clean` 默认是 `--dry-run`（别名 `-n`）；只有显式 `-y` / `--yes` 才会真正动文件。
 - 审计日志写入 `~/.local/state/wisp/history.jsonl`。
 

@@ -47,7 +47,7 @@ async fn run(cli: cli::Cli) -> Result<i32> {
 
     let engine_cfg = wisp_engine::EngineConfig {
         dry_run: cli.global.dry_run,
-        prefer_trash: cfg.clean.prefer_trash,
+        prefer_trash: cfg.clean.prefer_trash && !cli.global.no_trash,
         auto_approve_up_to: if cli.global.yes {
             wisp_engine::types::RiskLevel::Moderate
         } else {

@@ -152,6 +152,14 @@ impl Engine {
             }
         }
 
+        if !self.config.prefer_trash {
+            for action in &mut actions {
+                if let CleanAction::Delete { via, .. } = action {
+                    *via = DeletionVia::Direct;
+                }
+            }
+        }
+
         let estimated_size = actions
             .iter()
             .map(|a| match a {

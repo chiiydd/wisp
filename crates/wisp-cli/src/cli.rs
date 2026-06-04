@@ -50,7 +50,7 @@ pub struct GlobalOpts {
     pub dry_run: bool,
 
     /// Delete directly without moving to the trash.
-    #[arg(long, global = true)]
+    #[arg(long, alias = "purge", global = true)]
     pub no_trash: bool,
 
     /// Disable coloured output.

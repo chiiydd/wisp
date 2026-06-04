@@ -21,7 +21,7 @@ English · [中文](README.md)
 - **One-shot cleanup** — `wisp clean @user`, `@system`, `@dev`, `@all` (dry-run by default).
 - **Per-target cleaners** — pacman cache, paccache, orphans, journal, /tmp, trash, browsers, thumbnails, cargo, npm, pip, go, flatpak, docker.
 - **Interactive TUI** — neovim-style chrome, mode badge, statusline hints; toggle bar chart / polar sector chart with `v`.
-- **Safe by default** — three risk tiers (Safe / Moderate / Dangerous), explicit confirmations, hardcoded path blacklist, files moved to trash unless `--purge`.
+- **Safe by default** — three risk tiers (Safe / Moderate / Dangerous), explicit confirmations, hardcoded path blacklist, files moved to trash unless `--no-trash` (alias: `--purge`).
 - **Streamable output** — `--output json|jsonl` for scripts, `human` for terminals.
 - **Audit history** — every deletion is recorded with size, target, and timestamp; `wisp history list` / `restore`.
 - **Cross-shell completion + man page** — `wisp completion zsh`, `wisp man`.
@@ -117,7 +117,7 @@ See [docs/architecture.md](docs/architecture.md) and [docs/adding-a-cleaner.md](
 
 - Hardcoded blacklist (`/`, `/etc`, `/usr`, `/home`, `/var`, …) — refused before reaching the executor.
 - Three risk tiers; **Dangerous** cleaners require an explicit `--yes` even after confirmation.
-- All deletions go to trash by default; `--purge` for permanent removal.
+- Deletions go to trash by default; use `--no-trash` (alias: `--purge`) for permanent removal.
 - `--dry-run` (alias `-n`) is the default for `clean`; you must pass `-y` / `--yes` to apply.
 - Audit log written to `~/.local/state/wisp/history.jsonl`.
 
