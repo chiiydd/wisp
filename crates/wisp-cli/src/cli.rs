@@ -238,8 +238,9 @@ pub enum HistorySubcommand {
     },
     /// Show details of a history entry.
     Show { id: String },
-    /// Undo (restore) a trashed item.
-    Undo { id: String },
+    /// Restore a trashed item from a history entry.
+    #[command(alias = "undo")]
+    Restore { id: String },
     /// Clear all history.
     Clear,
 }

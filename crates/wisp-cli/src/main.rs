@@ -416,8 +416,8 @@ fn dispatch_history(args: cli::HistoryArgs) -> Result<i32> {
                 }
             }
         }
-        cli::HistorySubcommand::Undo { .. } => {
-            return Ok(not_implemented("history undo"));
+        cli::HistorySubcommand::Restore { id } => {
+            return Ok(not_implemented(format_args!("history restore {id}")));
         }
         cli::HistorySubcommand::Clear => {
             return Ok(not_implemented("history clear"));

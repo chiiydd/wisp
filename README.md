@@ -23,7 +23,7 @@ CLI + TUI 一体的磁盘清理工具：清 `pacman` 缓存、journal、孤儿�
 - **交互 TUI**：neovim 风格 chrome，模式徽章、状态栏键位提示；按 `v` 在柱状图与极坐标扇形图之间切换。
 - **默认安全**：三档风险（Safe / Moderate / Dangerous），显式确认，硬编码路径黑名单，删除默认走回收站，`--no-trash`（兼容别名 `--purge`）才永久删除。
 - **流式输出**：`--output json|jsonl` 适配脚本，`human` 适配终端阅读。
-- **审计与回退**：每次删除都记录大小、目标与时间戳，`wisp history list` / `restore` 可查可回退。
+- **审计历史**：每次删除都记录大小、目标与时间戳，`wisp history list` / `show` 可查；`restore` 规划中。
 - **shell 补全 + man page**：`wisp completion zsh`、`wisp man` 一键生成。
 
 ## 安装

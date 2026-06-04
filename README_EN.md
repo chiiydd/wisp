@@ -23,7 +23,7 @@ English · [中文](README.md)
 - **Interactive TUI** — neovim-style chrome, mode badge, statusline hints; toggle bar chart / polar sector chart with `v`.
 - **Safe by default** — three risk tiers (Safe / Moderate / Dangerous), explicit confirmations, hardcoded path blacklist, files moved to trash unless `--no-trash` (alias: `--purge`).
 - **Streamable output** — `--output json|jsonl` for scripts, `human` for terminals.
-- **Audit history** — every deletion is recorded with size, target, and timestamp; `wisp history list` / `restore`.
+- **Audit history** — every deletion is recorded with size, target, and timestamp; use `wisp history list` / `show`; `restore` is planned.
 - **Cross-shell completion + man page** — `wisp completion zsh`, `wisp man`.
 
 ## Install
