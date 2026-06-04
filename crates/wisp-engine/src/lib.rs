@@ -4,6 +4,8 @@
 //! actions, streams `ProgressEvent`s, writes the audit log, and persists
 //! history.
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use std::sync::Arc;
 
 use tokio::sync::mpsc;

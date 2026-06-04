@@ -124,9 +124,9 @@ wisp [--output human|json|jsonl]
 ## 开发
 
 ```sh
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test  --all-targets --all-features
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
 cargo deny check
 ```
 

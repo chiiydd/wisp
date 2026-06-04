@@ -108,6 +108,9 @@ criterion   = { version = "0.5", features = ["html_reports"] }
 unwrap_used = "warn"
 expect_used = "warn"
 
+[workspace.metadata.wisp]
+lint_policy = "unwrap_used and expect_used are forbidden in production by clippy -D warnings, but allowed in tests through cfg_attr at crate roots."
+
 # ─── Build profiles ────────────────────────────────────────────────────────────
 [profile.release]
 lto            = "fat"

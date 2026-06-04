@@ -5,6 +5,8 @@
 //!
 //! See `docs/adding-a-cleaner.md` for the step-by-step guide.
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;

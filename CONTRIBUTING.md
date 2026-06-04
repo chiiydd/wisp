@@ -113,8 +113,9 @@ Do not introduce synonyms.
 ```bash
 # Full check (mirrors CI)
 cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
+cargo deny check
 
 # Quick iteration
 cargo build

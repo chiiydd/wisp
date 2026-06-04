@@ -88,9 +88,9 @@ These come from `CONTRIBUTING.md`. Treat them as blocking constraints, not style
 
 ```sh
 # Local validation before commit
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test  --all-targets --all-features
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
 cargo deny check
 
 # Run the binary

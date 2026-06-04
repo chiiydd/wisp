@@ -3,6 +3,8 @@
 //! All other crates in the workspace depend on this crate.  It has zero UI
 //! dependencies.
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub mod config;
 pub mod errors;
 pub mod fs;

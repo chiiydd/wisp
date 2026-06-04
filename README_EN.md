@@ -124,9 +124,9 @@ See [docs/architecture.md](docs/architecture.md) and [docs/adding-a-cleaner.md](
 ## Development
 
 ```sh
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test  --all-targets --all-features
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets --all-features
 cargo deny check
 ```
 
