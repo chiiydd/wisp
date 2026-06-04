@@ -208,7 +208,8 @@ impl Engine {
             let _ = tx.send(ProgressEvent::ActionStarted { id }).await;
 
             // Determine if confirmation is needed
-            let needs_confirm = !auto_approve_all && plan.risk > self.config.auto_approve_up_to;
+            let action_risk = plan.risks.get(idx).copied().unwrap_or(plan.risk);
+            let needs_confirm = !auto_approve_all && action_risk > self.config.auto_approve_up_to;
 
             if needs_confirm {
                 let span = tracing::info_span!("wisp.confirm", id = id.0);
@@ -216,7 +217,7 @@ impl Engine {
                 let req = ConfirmRequest {
                     plan_id: plan.id,
                     action: action.clone(),
-                    risk: plan.risk,
+                    risk: action_risk,
                 };
                 match confirmer.ask(req).await {
                     Confirmation::ApprovedAll => {
@@ -391,12 +392,74 @@ pub fn resolve_targets(targets: &[&str]) -> Vec<&'static CleanerEntry> {
 #[cfg(test)]
 mod resolve_targets_tests {
     use super::*;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::Mutex;
 
     fn ids(entries: &[&'static CleanerEntry]) -> Vec<String> {
         entries
             .iter()
             .map(|e| e.meta.id().as_str().to_owned())
             .collect()
+    }
+
+    #[derive(Default)]
+    struct RecordingConfirmer {
+        risks: Mutex<Vec<RiskLevel>>,
+    }
+
+    impl wisp_core::types::Confirmer for RecordingConfirmer {
+        fn ask<'a>(
+            &'a self,
+            req: ConfirmRequest,
+        ) -> Pin<Box<dyn Future<Output = Confirmation> + Send + 'a>> {
+            self.risks.lock().unwrap().push(req.risk);
+            Box::pin(async { Confirmation::Approved })
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_confirms_only_actions_above_threshold_by_action_risk() {
+        let engine = Engine::new(
+            EngineConfig {
+                dry_run: true,
+                prefer_trash: true,
+                auto_approve_up_to: RiskLevel::Safe,
+            },
+            Arc::from(detect_distro()),
+        );
+        let plan = CleanPlan {
+            id: Uuid::nil(),
+            actions: vec![
+                CleanAction::RunExternal {
+                    cmd: wisp_core::types::ExternalCmd {
+                        program: "safe-action".into(),
+                        args: Vec::new(),
+                    },
+                    estimated_size: Some(1),
+                },
+                CleanAction::RunExternal {
+                    cmd: wisp_core::types::ExternalCmd {
+                        program: "dangerous-action".into(),
+                        args: Vec::new(),
+                    },
+                    estimated_size: Some(2),
+                },
+            ],
+            risks: vec![RiskLevel::Safe, RiskLevel::Dangerous],
+            estimated_size: 3,
+            required_privileges: Privileges {
+                requires_root: false,
+            },
+            risk: RiskLevel::Dangerous,
+        };
+        let confirmer = Arc::new(RecordingConfirmer::default());
+        let (tx, _rx) = mpsc::channel(16);
+
+        let report = engine.execute(plan, confirmer.clone(), tx).await.unwrap();
+
+        assert_eq!(report.succeeded, 2);
+        assert_eq!(*confirmer.risks.lock().unwrap(), vec![RiskLevel::Dangerous]);
     }
 
     #[test]
