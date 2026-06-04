@@ -150,7 +150,8 @@ async fn dispatch_clean(
     match global.output {
         cli::OutputFormat::Human => print_plan_human(&plan, global.dry_run),
         cli::OutputFormat::Json => {
-            let env = wisp_engine::types::OutputEnvelope::new(format!("clean {target}"), &plan);
+            let env = wisp_engine::types::OutputEnvelope::new(format!("clean {target}"), &plan)
+                .with_warnings(plan.warnings.clone());
             println!("{}", serde_json::to_string_pretty(&env)?);
         }
         cli::OutputFormat::Jsonl => {

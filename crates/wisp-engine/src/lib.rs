@@ -130,6 +130,7 @@ impl Engine {
 
         let mut actions: Vec<CleanAction> = Vec::new();
         let mut risks: Vec<RiskLevel> = Vec::new();
+        let mut warnings = Vec::new();
         let mut max_risk = RiskLevel::Trivial;
         let mut requires_root = false;
 
@@ -147,7 +148,9 @@ impl Engine {
                     actions.append(&mut acts);
                 }
                 Err(e) => {
+                    let msg = format!("{}: {e}", entry.meta.id());
                     warn!(id = %entry.meta.id(), error = %e, "cleaner plan failed");
+                    warnings.push(msg);
                 }
             }
         }
@@ -175,6 +178,7 @@ impl Engine {
             estimated_size,
             required_privileges: Privileges { requires_root },
             risk: max_risk,
+            warnings,
         })
     }
 
@@ -452,6 +456,7 @@ mod resolve_targets_tests {
                 requires_root: false,
             },
             risk: RiskLevel::Dangerous,
+            warnings: Vec::new(),
         };
         let confirmer = Arc::new(RecordingConfirmer::default());
         let (tx, _rx) = mpsc::channel(16);

@@ -1070,6 +1070,7 @@ impl CleanerPage {
                 actions,
                 risks,
                 required_privileges,
+                warnings,
                 ..
             } = plan;
             let mut new_actions = Vec::with_capacity(actions.len() - self.skipped.len());
@@ -1100,6 +1101,7 @@ impl CleanerPage {
                 estimated_size,
                 required_privileges,
                 risk: max_risk,
+                warnings,
             }
         };
         self.skipped.clear();

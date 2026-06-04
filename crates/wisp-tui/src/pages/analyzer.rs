@@ -988,6 +988,7 @@ impl AnalyzerPage {
                 requires_root: false,
             },
             risk: action_risk,
+            warnings: Vec::new(),
         };
 
         let (tx, mut rx) = tokio::sync::mpsc::channel::<ProgressEvent>(256);

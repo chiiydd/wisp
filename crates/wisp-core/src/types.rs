@@ -134,6 +134,10 @@ pub struct CleanPlan {
     pub required_privileges: Privileges,
     /// Highest `RiskLevel` among all actions.
     pub risk: RiskLevel,
+    /// Non-fatal planner warnings, such as a cleaner that failed to inspect
+    /// optional external state while other cleaners still produced actions.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 /// Lightweight summary emitted as the first `ProgressEvent`.
@@ -228,6 +232,11 @@ impl<T: Serialize> OutputEnvelope<T> {
             warnings: Vec::new(),
             errors: Vec::new(),
         }
+    }
+
+    pub fn with_warnings(mut self, warnings: Vec<String>) -> Self {
+        self.warnings = warnings;
+        self
     }
 }
 
@@ -395,6 +404,7 @@ mod tests {
                 requires_root: false,
             },
             risk: RiskLevel::Moderate,
+            warnings: Vec::new(),
         };
         let summary = CleanPlanSummary::from(&plan);
         assert_eq!(summary.action_count, 2);
