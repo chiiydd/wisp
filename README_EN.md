@@ -76,10 +76,10 @@ wisp [--output human|json|jsonl]
   │   └─ info <target>      # describe a single cleaner
   ├─ analyze [path]         # treemap / tree / flat views
   │   └─ cache list|clear   # saved scans
-  ├─ history list|show|restore|clear
-  ├─ state fav add|list|remove · path · export · import
-  ├─ config show|edit|set|reset
-  ├─ profile list           # named cleanup profiles
+  ├─ history list|show      # restore / clear planned; currently exit 70
+  ├─ state fav list         # fav add/remove and export/import planned
+  ├─ config info|show|edit  # keyed show, set, reset planned
+  ├─ profile                # named cleanup profiles planned
   ├─ doctor                 # diagnose
   ├─ completion <shell>     # bash · zsh · fish · powershell · elvish
   └─ man                    # generate man page

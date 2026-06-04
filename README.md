@@ -76,10 +76,10 @@ wisp [--output human|json|jsonl]
   │   └─ info <target>      # 查看单个清理器详情
   ├─ analyze [path]         # treemap / tree / flat 三种视图
   │   └─ cache list|clear   # 管理已保存的扫描结果
-  ├─ history list|show|restore|clear
-  ├─ state fav add|list|remove · path · export · import
-  ├─ config show|edit|set|reset
-  ├─ profile list           # 命名清理 profile
+  ├─ history list|show      # restore / clear 规划中，当前返回 70
+  ├─ state fav list         # fav add/remove、export/import 规划中
+  ├─ config info|show|edit  # key show、set、reset 规划中
+  ├─ profile                # 命名清理 profile 规划中
   ├─ doctor                 # 环境诊断
   ├─ completion <shell>     # bash · zsh · fish · powershell · elvish
   └─ man                    # 生成 man page

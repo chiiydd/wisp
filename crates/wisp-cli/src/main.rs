@@ -102,6 +102,11 @@ async fn dispatch_tui() -> Result<i32> {
     Ok(0)
 }
 
+fn not_implemented(feature: impl std::fmt::Display) -> i32 {
+    eprintln!("{feature}: not implemented yet.");
+    70
+}
+
 // ─── clean ───────────────────────────────────────────────────────────────────
 
 async fn dispatch_clean(
@@ -412,10 +417,10 @@ fn dispatch_history(args: cli::HistoryArgs) -> Result<i32> {
             }
         }
         cli::HistorySubcommand::Undo { .. } => {
-            eprintln!("Undo is only possible for entries deleted via trash (Phase 6).");
+            return Ok(not_implemented("history undo"));
         }
         cli::HistorySubcommand::Clear => {
-            eprintln!("History clear not yet implemented.");
+            return Ok(not_implemented("history clear"));
         }
     }
     Ok(0)
@@ -428,17 +433,23 @@ fn dispatch_state(args: cli::StateArgs) -> Result<i32> {
         cli::StateSubcommand::Fav(fav) => match fav.command {
             cli::FavSubcommand::List => println!("Favourites: (none yet – Phase 5)"),
             cli::FavSubcommand::Add { target } => {
-                println!("Add favourite '{target}': not yet implemented.");
+                return Ok(not_implemented(format_args!("state fav add {target}")));
             }
             cli::FavSubcommand::Remove { target } => {
-                println!("Remove favourite '{target}': not yet implemented.");
+                return Ok(not_implemented(format_args!("state fav remove {target}")));
             }
         },
         cli::StateSubcommand::Export { path } => {
-            eprintln!("Export to {}: not yet implemented.", path.display());
+            return Ok(not_implemented(format_args!(
+                "state export {}",
+                path.display()
+            )));
         }
         cli::StateSubcommand::Import { path } => {
-            eprintln!("Import from {}: not yet implemented.", path.display());
+            return Ok(not_implemented(format_args!(
+                "state import {}",
+                path.display()
+            )));
         }
     }
     Ok(0)
@@ -462,7 +473,7 @@ fn dispatch_config(args: cli::ConfigArgs) -> Result<i32> {
             );
         }
         Some(cli::ConfigSubcommand::Show { key: Some(k) }) => {
-            eprintln!("Show key '{k}': not yet implemented.");
+            return Ok(not_implemented(format_args!("config show {k}")));
         }
         Some(cli::ConfigSubcommand::Edit) => {
             let path = wisp_engine::config::Config::config_path()
@@ -471,10 +482,10 @@ fn dispatch_config(args: cli::ConfigArgs) -> Result<i32> {
             std::process::Command::new(&editor).arg(&path).status()?;
         }
         Some(cli::ConfigSubcommand::Set { key, value }) => {
-            eprintln!("Set '{key}={value}': not yet implemented.");
+            return Ok(not_implemented(format_args!("config set {key}={value}")));
         }
         Some(cli::ConfigSubcommand::Reset) => {
-            eprintln!("Config reset: not yet implemented.");
+            return Ok(not_implemented("config reset"));
         }
     }
     Ok(0)
@@ -483,8 +494,7 @@ fn dispatch_config(args: cli::ConfigArgs) -> Result<i32> {
 // ─── profile ─────────────────────────────────────────────────────────────────
 
 fn dispatch_profile(_args: cli::ProfileArgs) -> Result<i32> {
-    eprintln!("Profile management not yet implemented (Phase 5).");
-    Ok(0)
+    Ok(not_implemented("profile management"))
 }
 
 // ─── doctor ──────────────────────────────────────────────────────────────────
