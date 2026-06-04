@@ -52,8 +52,7 @@ pub fn read(limit: usize) -> Vec<CleanReport> {
 }
 
 fn history_path() -> Option<std::path::PathBuf> {
-    let proj = directories::ProjectDirs::from("", "", "wisp")?;
-    let dir = proj.data_local_dir().join("state");
+    let dir = wisp_core::config::Config::state_dir()?;
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("history.jsonl"))
 }

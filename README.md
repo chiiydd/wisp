@@ -119,7 +119,7 @@ wisp [--output human|json|jsonl]
 - 三档风险等级；**Dangerous** 级别的清理器即便确认过仍要求显式 `--yes`。
 - 删除默认走系统回收站；如需永久删除请加 `--no-trash`（兼容别名 `--purge`）。
 - `clean` 默认是 `--dry-run`（别名 `-n`）；只有显式 `-y` / `--yes` 才会真正动文件。
-- 审计日志写入 `~/.local/state/wisp/history.jsonl`。
+- 历史记录写入 `~/.local/state/wisp/history.jsonl`，审计日志写入 `~/.local/state/wisp/audit.log`。
 
 ## 开发
 

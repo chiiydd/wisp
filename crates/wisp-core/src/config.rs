@@ -134,7 +134,11 @@ impl Config {
 
     /// Path to the state directory (`~/.local/state/wisp/`).
     pub fn state_dir() -> Option<PathBuf> {
-        Self::project_dirs().map(|d| d.data_local_dir().join("state"))
+        if let Some(base) = std::env::var_os("XDG_STATE_HOME") {
+            return Some(PathBuf::from(base).join("wisp"));
+        }
+        let home = std::env::var_os("HOME")?;
+        Some(PathBuf::from(home).join(".local/state/wisp"))
     }
 
     /// Path to the cache directory (`~/.cache/wisp/`).

@@ -57,9 +57,7 @@ fn build_entry(
 }
 
 fn audit_log_path() -> Option<std::path::PathBuf> {
-    let proj = directories::ProjectDirs::from("", "", "wisp")?;
-    // Use data_local_dir as the XDG state equivalent
-    let dir = proj.data_local_dir().join("state");
+    let dir = wisp_core::config::Config::state_dir()?;
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("audit.log"))
 }

@@ -119,7 +119,7 @@ See [docs/architecture.md](docs/architecture.md) and [docs/adding-a-cleaner.md](
 - Three risk tiers; **Dangerous** cleaners require an explicit `--yes` even after confirmation.
 - Deletions go to trash by default; use `--no-trash` (alias: `--purge`) for permanent removal.
 - `--dry-run` (alias `-n`) is the default for `clean`; you must pass `-y` / `--yes` to apply.
-- Audit log written to `~/.local/state/wisp/history.jsonl`.
+- History is written to `~/.local/state/wisp/history.jsonl`; audit entries are written to `~/.local/state/wisp/audit.log`.
 
 ## Development
 
