@@ -111,7 +111,7 @@ Five-layer workspace, strictly one-way (L1 → L5):
 | L4    | `wisp-engine`    | Builds `CleanPlan`, schedules execution, emits `ProgressEvent` stream, writes history.   |
 | L5    | `wisp-cli` + `wisp-tui` | Thin presentation layer (clap / inquire / ratatui). Talks to the engine only.   |
 
-See [docs/architecture.md](docs/architecture.md) and [docs/adding-a-cleaner.md](docs/adding-a-cleaner.md).
+See [docs/architecture.md](docs/architecture.md), [docs/cleaners.md](docs/cleaners.md), and [docs/adding-a-cleaner.md](docs/adding-a-cleaner.md).
 
 ## Safety model
 

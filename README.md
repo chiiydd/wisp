@@ -111,7 +111,7 @@ wisp [--output human|json|jsonl]
 | L4 | `wisp-engine`    | 把清理器组装成 `CleanPlan`，调度执行、产出 `ProgressEvent` 事件流、写历史与审计。           |
 | L5 | `wisp-cli` + `wisp-tui` | 表现层（clap / inquire / ratatui），只通过 Engine 与底层交互。                       |
 
-更多细节见 [docs/architecture.md](docs/architecture.md) 与 [docs/adding-a-cleaner.md](docs/adding-a-cleaner.md)。
+更多细节见 [docs/architecture.md](docs/architecture.md)、[docs/cleaners.md](docs/cleaners.md) 与 [docs/adding-a-cleaner.md](docs/adding-a-cleaner.md)。
 
 ## 安全模型
 

@@ -1,6 +1,7 @@
 # Adding a Cleaner
 
-Follow this checklist when adding a new cleaner to `wisp-cleaners`.
+Follow this checklist when adding a new cleaner to `wisp-cleaners`. Keep
+[docs/cleaners.md](cleaners.md) in sync with every registered cleaner.
 
 ## Step-by-step
 
@@ -13,8 +14,10 @@ crates/wisp-cleaners/src/system/my_cleaner.rs   # or user/ or dev/
 ### 2. Implement `CleanerMeta`
 
 ```rust
-use wisp_core::types::{CleanAction, CleanerId, CleanerGroup, CleanerMeta, RiskLevel};
+use wisp_core::types::{CleanerGroup, CleanerId, CleanerMeta, RiskLevel};
 use wisp_platform::{Distro, DistroKind};
+
+use crate::{CLEANERS, CleanCtx, CleanerEntry, PlanFuture, delete_home_subdirs};
 
 struct MyCleaner;
 
@@ -31,38 +34,32 @@ impl CleanerMeta for MyCleaner {
 }
 ```
 
-### 3. Implement `CleanerExec`
+### 3. Implement the plan function
 
 ```rust
-use crate::{CleanCtx, CleanerExec};
-
-impl CleanerExec for MyCleaner {
-    async fn plan(&self, ctx: &CleanCtx) -> wisp_core::CoreResult<Vec<CleanAction>> {
-        if ctx.dry_run {
-            // Collect paths but return them without actually touching anything.
-        }
-        Ok(vec![
-            CleanAction::Delete {
-                path: "/path/to/file".try_into()?,
-                size: 0,
-                via: wisp_core::types::DeletionVia::Trash,
-            },
-        ])
-    }
+fn plan<'a>(_ctx: &'a CleanCtx) -> PlanFuture<'a> {
+    Box::pin(async move {
+        Ok(delete_home_subdirs(
+            &[".cache/my-tool"],
+            wisp_core::types::DeletionVia::Direct,
+        ))
+    })
 }
 ```
+
+The plan function must only describe actions. Deletion and external-command
+execution happen later in `wisp-engine`, where dry-run, confirmation, path
+safety, history, and audit logging are enforced.
 
 ### 4. Register via linkme
 
 At the bottom of the module file:
 
 ```rust
-static MY_CLEANER_IMPL: MyCleaner = MyCleaner;
+static META: MyCleaner = MyCleaner;
 
-#[linkme::distributed_slice(crate::CLEANERS)]
-static MY_CLEANER_ENTRY: crate::CleanerEntry = crate::CleanerEntry {
-    meta: &MY_CLEANER_IMPL,
-};
+#[linkme::distributed_slice(CLEANERS)]
+static ENTRY: CleanerEntry = CleanerEntry { meta: &META, plan };
 ```
 
 ### 5. Expose the module
@@ -91,5 +88,5 @@ mod tests {
 
 ### 7. Update docs
 
-Add an entry to `docs/cleaners.md` with: id, name, risk, description, what it
-deletes, whether it requires root.
+Add an entry to [docs/cleaners.md](cleaners.md) with: id, group, risk, action
+type, root requirement, and a short description.
