@@ -128,16 +128,16 @@ async fn dispatch_clean(
         }
     };
 
-    // Build plan
-    if !global.quiet {
-        eprint!("Building plan for '{target}'…");
+    let show_progress = !global.quiet && global.output == cli::OutputFormat::Human;
+    if show_progress {
+        eprint!("Building plan for '{target}'...");
     }
     let plan = engine.build_plan(&[target.as_str()]).await?;
-    if !global.quiet {
+    if show_progress {
         eprintln!(" done.");
     }
 
-    if plan.actions.is_empty() {
+    if plan.actions.is_empty() && global.output == cli::OutputFormat::Human {
         println!("Nothing to clean for '{target}'.");
         return Ok(0);
     }
@@ -158,7 +158,9 @@ async fn dispatch_clean(
     }
 
     if global.dry_run {
-        println!("\n[DRY RUN] No changes made.");
+        if global.output == cli::OutputFormat::Human {
+            println!("\n[DRY RUN] No changes made.");
+        }
         return Ok(0);
     }
 
