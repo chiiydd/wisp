@@ -6,3 +6,4 @@ pub mod go;
 pub mod javascript;
 pub mod npm;
 pub mod pip;
+pub mod python_extra;
