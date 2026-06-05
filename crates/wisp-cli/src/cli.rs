@@ -366,9 +366,9 @@ mod tests {
 
     fn clean_help() -> String {
         let mut cmd = Cli::command();
-        let clean = cmd
-            .find_subcommand_mut("clean")
-            .expect("clean subcommand exists");
+        let Some(clean) = cmd.find_subcommand_mut("clean") else {
+            panic!("clean subcommand exists");
+        };
         clean.render_help().to_string()
     }
 
