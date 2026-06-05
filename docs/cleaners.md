@@ -12,6 +12,7 @@ unambiguous.
 | arch.orphans | System | Moderate | external | yes | Remove Arch orphan packages. |
 | system.tmp | System | Dangerous | delete | no | Clean selected `/tmp` children. |
 | user.thumbnails | User | Trivial | delete | no | Remove thumbnail cache files. |
+| user.common_cache | User | Trivial | delete | no | Remove common rebuildable desktop caches. |
 | user.browser_cache | User | Trivial | delete | no | Remove browser rebuildable cache directories. |
 | user.browser_state | User | Dangerous | delete | no | Remove browser site/session state while preserving passwords, bookmarks, and history. |
 | user.trash | User | Safe | delete | no | Empty user trash files and metadata. |
@@ -20,7 +21,9 @@ unambiguous.
 | user.linuxqq_media | User | Dangerous | delete | no | Remove LinuxQQ media cache directories. |
 | dev.cargo | Dev | Safe | delete | no | Remove Cargo registry and git caches. |
 | dev.npm | Dev | Safe | external | no | Clean npm cache. |
+| dev.javascript | Dev | Safe | delete | no | Remove JavaScript toolchain package and build caches. |
 | dev.pip | Dev | Safe | delete | no | Remove pip HTTP and wheel cache. |
+| dev.python_extra | Dev | Safe | delete | no | Remove Python tool caches beyond pip. |
 | dev.go | Dev | Safe | delete | no | Remove Go module cache. |
 | dev.docker | Dev | Moderate | external | no | Prune Docker dangling images and build-cache data. |
 

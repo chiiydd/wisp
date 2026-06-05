@@ -19,7 +19,7 @@ English · [中文](README.md)
 ## Features
 
 - **One-shot cleanup** — `wisp clean @user`, `@system`, `@dev`, `@all` (dry-run by default).
-- **Per-target cleaners** — pacman cache, paccache, orphans, journal, /tmp, trash, browsers, thumbnails, cargo, npm, pip, go, flatpak, docker.
+- **Per-target cleaners** — pacman cache, paccache, orphans, journal, /tmp, trash, browsers, common desktop caches, thumbnails, cargo, npm, JavaScript toolchains, pip, Python tools, go, flatpak, docker.
 - **Interactive TUI** — neovim-style chrome, mode badge, statusline hints; toggle bar chart / polar sector chart with `v`.
 - **Safe by default** — three risk tiers (Safe / Moderate / Dangerous), explicit confirmations, hardcoded path blacklist, files moved to trash unless `--no-trash` (alias: `--purge`).
 - **Streamable output** — `--output json|jsonl` for scripts, `human` for terminals.

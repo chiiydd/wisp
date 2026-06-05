@@ -91,12 +91,8 @@ mod tests {
         let paths = collect_paths(&actions);
 
         assert!(paths.iter().any(|p| p.ends_with(".cache/yarn")));
-        assert!(paths
-            .iter()
-            .any(|p| p.ends_with(".local/share/pnpm/store")));
-        assert!(paths
-            .iter()
-            .any(|p| p.ends_with(".bun/install/cache")));
+        assert!(paths.iter().any(|p| p.ends_with(".local/share/pnpm/store")));
+        assert!(paths.iter().any(|p| p.ends_with(".bun/install/cache")));
         for action in &actions {
             let CleanAction::Delete { via, .. } = action else {
                 panic!("javascript cleaner must only emit Delete actions");

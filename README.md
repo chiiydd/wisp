@@ -19,7 +19,7 @@ CLI + TUI 一体的磁盘清理工具：清 `pacman` 缓存、journal、孤儿�
 ## 特性
 
 - **一键清理**：`wisp clean @user / @system / @dev / @all`，默认 dry-run，安全可预览。
-- **分目标清理器**：pacman、paccache、orphans、journal、/tmp、回收站、浏览器缓存、缩略图、cargo、npm、pip、go、flatpak、docker。
+- **分目标清理器**：pacman、paccache、orphans、journal、/tmp、回收站、浏览器缓存、常见桌面缓存、缩略图、cargo、npm、JavaScript 工具链、pip、Python 工具、go、flatpak、docker。
 - **交互 TUI**：neovim 风格 chrome，模式徽章、状态栏键位提示；按 `v` 在柱状图与极坐标扇形图之间切换。
 - **默认安全**：三档风险（Safe / Moderate / Dangerous），显式确认，硬编码路径黑名单，删除默认走回收站，`--no-trash`（兼容别名 `--purge`）才永久删除。
 - **流式输出**：`--output json|jsonl` 适配脚本，`human` 适配终端阅读。

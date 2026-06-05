@@ -86,9 +86,11 @@ mod tests {
         let paths = collect_paths(&actions);
 
         assert!(paths.iter().any(|p| p.ends_with(".cache/fontconfig")));
-        assert!(paths
-            .iter()
-            .any(|p| p.ends_with(".cache/mesa_shader_cache")));
+        assert!(
+            paths
+                .iter()
+                .any(|p| p.ends_with(".cache/mesa_shader_cache"))
+        );
         assert!(!paths.iter().any(|p| p.ends_with(".cache/documents")));
         for action in &actions {
             let CleanAction::Delete { via, .. } = action else {
