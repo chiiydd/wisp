@@ -16,8 +16,10 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 wisp is a modern disk cleanup and analysis tool for Linux.\n\n\
 Run without arguments to enter the interactive TUI.\n\n\
 EXAMPLES\n\
-    wisp clean pacman -n          # dry-run pacman cache cleanup\n\
-    wisp clean @user -y           # clean all user targets without prompting\n\
+    wisp clean                    # preview recommended cleanup\n\
+    wisp clean --apply            # apply recommended cleanup\n\
+    wisp clean --deep             # preview high-risk cleanup too\n\
+    wisp clean list               # list all clean targets\n\
     wisp analyze ~/               # analyse home directory disk usage\n\
     wisp doctor                   # check environment and permissions"
 )]
@@ -41,33 +43,13 @@ pub struct GlobalOpts {
     #[arg(short, long, global = true)]
     pub quiet: bool,
 
-    /// Automatically confirm operations up to Moderate risk.
-    #[arg(short = 'y', long, global = true)]
-    pub yes: bool,
-
-    /// Preview actions without executing them.
-    #[arg(short = 'n', long, global = true)]
-    pub dry_run: bool,
-
-    /// Delete directly without moving to the trash.
-    #[arg(long, alias = "purge", global = true)]
-    pub no_trash: bool,
-
     /// Disable coloured output.
     #[arg(long, global = true)]
     pub no_color: bool,
 
-    /// Output format.
-    #[arg(long, value_enum, default_value = "human", global = true)]
-    pub output: OutputFormat,
-
     /// Path to an alternative config file.
     #[arg(long, global = true, value_name = "PATH")]
     pub config: Option<PathBuf>,
-
-    /// Named configuration profile to use.
-    #[arg(long, global = true, value_name = "NAME")]
-    pub profile: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -95,9 +77,11 @@ pub enum Command {
     Analyze(AnalyzeArgs),
 
     /// Deletion history management.
+    #[command(hide = true)]
     History(HistoryArgs),
 
     /// User state management (favourites, export/import).
+    #[command(hide = true)]
     State(StateArgs),
 
     /// Configuration management.
@@ -105,15 +89,18 @@ pub enum Command {
     Config(ConfigArgs),
 
     /// Named configuration profiles.
+    #[command(hide = true)]
     Profile(ProfileArgs),
 
     /// Environment self-check.
     Doctor,
 
     /// Generate shell completion scripts.
+    #[command(hide = true)]
     Completion(CompletionArgs),
 
     /// Generate a man page.
+    #[command(hide = true)]
     Man,
 }
 
@@ -142,6 +129,26 @@ pub struct CleanArgs {
 
     /// Target name (e.g. `pacman`, `@user`) or group (e.g. `@all`).
     pub target: Option<String>,
+
+    /// Apply the clean plan. Without this flag, clean only previews.
+    #[arg(short = 'a', long, alias = "yes", short_alias = 'y')]
+    pub apply: bool,
+
+    /// Preview actions without executing them. This is the default.
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
+
+    /// Include high-risk cleaners in the default recommended plan.
+    #[arg(long)]
+    pub deep: bool,
+
+    /// Delete directly without moving to the trash.
+    #[arg(long, alias = "purge")]
+    pub no_trash: bool,
+
+    /// Output format.
+    #[arg(long, value_enum, default_value = "human")]
+    pub output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -239,9 +246,10 @@ pub enum HistorySubcommand {
     /// Show details of a history entry.
     Show { id: String },
     /// Restore a trashed item from a history entry.
-    #[command(alias = "undo")]
+    #[command(alias = "undo", hide = true)]
     Restore { id: String },
     /// Clear all history.
+    #[command(hide = true)]
     Clear,
 }
 
@@ -258,8 +266,10 @@ pub enum StateSubcommand {
     /// Manage favourite targets and paths.
     Fav(FavArgs),
     /// Export state to a file.
+    #[command(hide = true)]
     Export { path: PathBuf },
     /// Import state from a file.
+    #[command(hide = true)]
     Import { path: PathBuf },
 }
 
@@ -272,10 +282,12 @@ pub struct FavArgs {
 #[derive(Debug, Subcommand)]
 pub enum FavSubcommand {
     /// Add a target or path to favourites.
+    #[command(hide = true)]
     Add { target: String },
     /// List favourites.
     List,
     /// Remove from favourites.
+    #[command(hide = true)]
     Remove { target: String },
 }
 
@@ -296,8 +308,10 @@ pub enum ConfigSubcommand {
     /// Show config values.
     Show { key: Option<String> },
     /// Set a config value.
+    #[command(hide = true)]
     Set { key: String, value: String },
     /// Reset config to defaults.
+    #[command(hide = true)]
     Reset,
 }
 
@@ -339,4 +353,63 @@ pub enum Shell {
     Fish,
     Elvish,
     Nu,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, Parser};
+
+    fn root_help() -> String {
+        Cli::command().render_help().to_string()
+    }
+
+    fn clean_help() -> String {
+        let mut cmd = Cli::command();
+        let clean = cmd
+            .find_subcommand_mut("clean")
+            .expect("clean subcommand exists");
+        clean.render_help().to_string()
+    }
+
+    #[test]
+    fn clean_without_target_is_valid_recommended_mode() {
+        let cli = Cli::parse_from(["wisp", "clean"]);
+        let Some(Command::Clean(args)) = cli.command else {
+            panic!("expected clean command");
+        };
+        assert!(args.target.is_none());
+        assert!(!args.apply);
+    }
+
+    #[test]
+    fn clean_apply_has_clear_flag_and_legacy_alias() {
+        let cli = Cli::parse_from(["wisp", "clean", "--apply"]);
+        let Some(Command::Clean(args)) = cli.command else {
+            panic!("expected clean command");
+        };
+        assert!(args.apply);
+
+        let cli = Cli::parse_from(["wisp", "clean", "-y"]);
+        let Some(Command::Clean(args)) = cli.command else {
+            panic!("expected clean command");
+        };
+        assert!(args.apply);
+    }
+
+    #[test]
+    fn root_help_hides_advanced_and_unfinished_commands() {
+        let help = root_help();
+        assert!(!help.contains(" state "));
+        assert!(!help.contains(" profile "));
+        assert!(!help.contains(" completion "));
+        assert!(!help.contains(" man "));
+    }
+
+    #[test]
+    fn clean_help_shows_clean_specific_apply_flag() {
+        let help = clean_help();
+        assert!(help.contains("--apply"));
+        assert!(help.contains("--deep"));
+    }
 }

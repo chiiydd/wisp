@@ -43,22 +43,11 @@ async fn run(cli: cli::Cli) -> Result<i32> {
         None => wisp_engine::config::Config::load()?,
     };
 
-    let distro = Arc::from(wisp_engine::detect_distro());
-
-    let engine_cfg = wisp_engine::EngineConfig {
-        dry_run: cli.global.dry_run,
-        prefer_trash: cfg.clean.prefer_trash && !cli.global.no_trash,
-        auto_approve_up_to: if cli.global.yes {
-            wisp_engine::types::RiskLevel::Moderate
-        } else {
-            wisp_engine::types::RiskLevel::Safe
-        },
-    };
-    let engine = Arc::new(wisp_engine::Engine::new(engine_cfg, distro));
+    let distro: Arc<dyn wisp_engine::Distro> = Arc::from(wisp_engine::detect_distro());
 
     let code = match cli.command {
         None | Some(cli::Command::Tui(_)) => dispatch_tui().await?,
-        Some(cli::Command::Clean(args)) => dispatch_clean(args, &cli.global, engine).await?,
+        Some(cli::Command::Clean(args)) => dispatch_clean(args, &cli.global, &cfg, distro).await?,
         Some(cli::Command::Analyze(args)) => dispatch_analyze(args).await?,
         Some(cli::Command::History(args)) => dispatch_history(args)?,
         Some(cli::Command::State(args)) => dispatch_state(args)?,
@@ -112,7 +101,8 @@ fn not_implemented(feature: impl std::fmt::Display) -> i32 {
 async fn dispatch_clean(
     args: cli::CleanArgs,
     global: &cli::GlobalOpts,
-    engine: Arc<wisp_engine::Engine>,
+    cfg: &wisp_engine::config::Config,
+    distro: Arc<dyn wisp_engine::Distro>,
 ) -> Result<i32> {
     match args.command {
         Some(cli::CleanSubcommand::List { group, risk }) => {
@@ -125,33 +115,52 @@ async fn dispatch_clean(
         None => {}
     }
 
-    let target = match args.target {
-        Some(t) => t,
-        None => {
-            eprintln!("Specify a target or subcommand. Try: wisp clean list");
-            return Ok(64);
-        }
+    let apply = args.apply && !args.dry_run;
+    let dry_run = !apply;
+    let output = args.output;
+    let target_label = match args.target.as_deref() {
+        Some(target) => target.to_owned(),
+        None => "recommended".to_owned(),
     };
 
-    let show_progress = !global.quiet && global.output == cli::OutputFormat::Human;
+    let engine_cfg = wisp_engine::EngineConfig {
+        dry_run,
+        prefer_trash: cfg.clean.prefer_trash && !args.no_trash,
+        auto_approve_up_to: if apply {
+            wisp_engine::types::RiskLevel::Moderate
+        } else {
+            wisp_engine::types::RiskLevel::Safe
+        },
+    };
+    let engine = Arc::new(wisp_engine::Engine::new(engine_cfg, distro));
+    let targets = match args.target.as_deref() {
+        Some(target) => vec![target],
+        None => vec!["@user", "@dev"],
+    };
+
+    let show_progress = !global.quiet && output == cli::OutputFormat::Human;
     if show_progress {
-        eprint!("Building plan for '{target}'...");
+        eprint!("Building plan for '{target_label}'...");
     }
-    let plan = engine.build_plan(&[target.as_str()]).await?;
+    let mut plan = engine.build_plan(&targets).await?;
+    if args.target.is_none() && !args.deep {
+        plan = without_dangerous_actions(plan);
+    }
     if show_progress {
         eprintln!(" done.");
     }
 
-    if plan.actions.is_empty() && global.output == cli::OutputFormat::Human {
-        println!("Nothing to clean for '{target}'.");
+    if plan.actions.is_empty() && output == cli::OutputFormat::Human {
+        println!("Nothing to clean for '{target_label}'.");
         return Ok(0);
     }
 
-    match global.output {
-        cli::OutputFormat::Human => print_plan_human(&plan, global.dry_run),
+    match output {
+        cli::OutputFormat::Human => print_plan_human(&plan, dry_run),
         cli::OutputFormat::Json => {
-            let env = wisp_engine::types::OutputEnvelope::new(format!("clean {target}"), &plan)
-                .with_warnings(plan.warnings.clone());
+            let env =
+                wisp_engine::types::OutputEnvelope::new(format!("clean {target_label}"), &plan)
+                    .with_warnings(plan.warnings.clone());
             println!("{}", serde_json::to_string_pretty(&env)?);
         }
         cli::OutputFormat::Jsonl => {
@@ -163,15 +172,15 @@ async fn dispatch_clean(
         }
     }
 
-    if global.dry_run {
-        if global.output == cli::OutputFormat::Human {
-            println!("\n[DRY RUN] No changes made.");
+    if dry_run {
+        if output == cli::OutputFormat::Human {
+            println!("\nPreview only. No changes made. Use `wisp clean --apply` to run it.");
         }
         return Ok(0);
     }
 
     // Choose confirmer
-    let cfm: Arc<dyn wisp_engine::types::Confirmer> = if global.yes {
+    let cfm: Arc<dyn wisp_engine::types::Confirmer> = if apply {
         Arc::new(confirmer::AutoConfirmer {
             approve_dangerous: false,
         })
@@ -184,7 +193,6 @@ async fn dispatch_clean(
     let engine_clone = engine.clone();
     let plan_clone = plan.clone();
     let cfm_clone = cfm.clone();
-    let output = global.output;
 
     let exec_handle =
         tokio::spawn(async move { engine_clone.execute(plan_clone, cfm_clone, tx).await });
@@ -198,11 +206,48 @@ async fn dispatch_clean(
 
     let report = exec_handle.await??;
 
-    if global.output == cli::OutputFormat::Human {
+    if output == cli::OutputFormat::Human {
         print_report_human(&report);
     }
 
     Ok(if report.failed > 0 { 4 } else { 0 })
+}
+
+fn without_dangerous_actions(plan: wisp_engine::types::CleanPlan) -> wisp_engine::types::CleanPlan {
+    let mut actions = Vec::new();
+    let mut risks = Vec::new();
+
+    for (idx, action) in plan.actions.into_iter().enumerate() {
+        let risk = plan.risks.get(idx).copied().unwrap_or(plan.risk);
+        if risk == wisp_engine::types::RiskLevel::Dangerous {
+            continue;
+        }
+        actions.push(action);
+        risks.push(risk);
+    }
+
+    let estimated_size = actions
+        .iter()
+        .map(|action| match action {
+            wisp_engine::types::CleanAction::Delete { size, .. } => *size,
+            wisp_engine::types::CleanAction::RunExternal { estimated_size, .. } => {
+                estimated_size.unwrap_or(0)
+            }
+        })
+        .sum();
+    let risk = risks
+        .iter()
+        .copied()
+        .max()
+        .unwrap_or(wisp_engine::types::RiskLevel::Trivial);
+
+    wisp_engine::types::CleanPlan {
+        actions,
+        risks,
+        estimated_size,
+        risk,
+        ..plan
+    }
 }
 
 fn print_cleaner_list(group: Option<&str>, risk: Option<&str>) {
