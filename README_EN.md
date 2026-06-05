@@ -18,13 +18,13 @@ English · [中文](README.md)
 
 ## Features
 
-- **One-shot cleanup** — `wisp clean @user`, `@system`, `@dev`, `@all` (dry-run by default).
+- **One-shot cleanup** — `wisp clean` previews recommended user/dev cleanup by default; `wisp clean --apply` runs it.
 - **Per-target cleaners** — pacman cache, paccache, orphans, journal, /tmp, trash, browsers, common desktop caches, thumbnails, cargo, npm, JavaScript toolchains, pip, Python tools, go, flatpak, docker.
 - **Interactive TUI** — neovim-style chrome, mode badge, statusline hints; toggle bar chart / polar sector chart with `v`.
 - **Safe by default** — three risk tiers (Safe / Moderate / Dangerous), explicit confirmations, hardcoded path blacklist, files moved to trash unless `--no-trash` (alias: `--purge`).
 - **Streamable output** — `--output json|jsonl` for scripts, `human` for terminals.
-- **Audit history** — every deletion is recorded with size, target, and timestamp; use `wisp history list` / `show`; `restore` is planned.
-- **Cross-shell completion + man page** — `wisp completion zsh`, `wisp man`.
+- **Audit history** — every deletion is recorded with size, target, and timestamp; advanced users can query hidden `wisp history list` / `show`.
+- **Advanced tooling** — shell completion, man pages, profiles, and state commands remain available, but are hidden from normal help until they are central to the workflow.
 
 ## Install
 
@@ -59,30 +59,27 @@ Grab the latest tarball from the [releases page](https://github.com/chiiydd/wisp
 
 ```sh
 wisp                       # launch TUI
-wisp clean @user -n        # preview user-scope cleanup
-wisp clean pacman -y       # apply pacman cache cleanup
+wisp clean                 # preview recommended cleanup
+wisp clean --apply         # apply recommended cleanup
+wisp clean --deep          # preview high-risk cleanup too
+wisp clean list            # advanced: list all cleaners
 wisp analyze ~/Downloads   # one-shot analyzer (no TUI)
 wisp doctor                # environment & permissions check
-wisp history list          # past clean sessions
 ```
 
 ## Command surface
 
 ```
-wisp [--output human|json|jsonl]
+wisp
   ├─ tui                    # full-screen interface
-  ├─ clean <target> [-n|-y] # @all · @system · @user · @dev · or per-target
-  │   ├─ list               # list available cleaners
-  │   └─ info <target>      # describe a single cleaner
+  ├─ clean [--apply]        # preview recommended cleanup by default
+  │   ├─ --deep             # include high-risk cleaners
+  │   ├─ list               # advanced: list available cleaners
+  │   └─ info <target>      # advanced: describe a single cleaner
   ├─ analyze [path]         # treemap / tree / flat views
-  │   └─ cache list|clear   # saved scans
-  ├─ history list|show      # restore / clear planned; currently exit 70
-  ├─ state fav list         # fav add/remove and export/import planned
-  ├─ config info|show|edit  # keyed show, set, reset planned
-  ├─ profile                # named cleanup profiles planned
+  ├─ config info|show|edit  # config path, display, and editing
   ├─ doctor                 # diagnose
-  ├─ completion <shell>     # bash · zsh · fish · powershell · elvish
-  └─ man                    # generate man page
+  └─ help                   # full command help
 ```
 
 ## TUI keys
@@ -116,9 +113,9 @@ See [docs/architecture.md](docs/architecture.md), [docs/cleaners.md](docs/cleane
 ## Safety model
 
 - Hardcoded blacklist (`/`, `/etc`, `/usr`, `/home`, `/var`, …) — refused before reaching the executor.
-- Three risk tiers; **Dangerous** cleaners require an explicit `--yes` even after confirmation.
+- Three risk tiers; **Dangerous** cleaners are excluded from the recommended clean unless `--deep` is passed.
 - Deletions go to trash by default; use `--no-trash` (alias: `--purge`) for permanent removal.
-- `--dry-run` (alias `-n`) is the default for `clean`; you must pass `-y` / `--yes` to apply.
+- `wisp clean` previews by default; pass `--apply` to execute. Legacy `-y` / `--yes` aliases still work.
 - History is written to `~/.local/state/wisp/history.jsonl`; audit entries are written to `~/.local/state/wisp/audit.log`.
 
 ## Development
