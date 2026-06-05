@@ -3,5 +3,6 @@
 pub mod cargo;
 pub mod docker;
 pub mod go;
+pub mod javascript;
 pub mod npm;
 pub mod pip;
