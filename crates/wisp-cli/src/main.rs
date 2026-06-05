@@ -257,55 +257,97 @@ fn without_dangerous_actions(plan: wisp_engine::types::CleanPlan) -> wisp_engine
 }
 
 fn print_cleaner_list(group: Option<&str>, risk: Option<&str>) {
-    println!("{:<20}  {:<8}  {:<8}  NAME", "ID", "RISK", "GROUP");
-    println!("{}", "-".repeat(70));
+    print!("{}", format_cleaner_list(group, risk));
+}
+
+fn format_cleaner_list(group: Option<&str>, risk: Option<&str>) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{:<22}  {:<8}  {:<9}  {:<4}  NAME\n",
+        "ID", "GROUP", "RISK", "ROOT"
+    ));
+    out.push_str(&format!("{}\n", "-".repeat(82)));
+
     for entry in wisp_engine::all_cleaners() {
         let m = entry.meta;
+        let group_text = group_label(m.group());
+        let risk_text = risk_label(m.risk());
         if let Some(g) = group
-            && !format!("{:?}", m.group()).to_lowercase().contains(g)
+            && !group_text.contains(&g.to_lowercase())
         {
             continue;
         }
         if let Some(r) = risk
-            && !format!("{:?}", m.risk()).to_lowercase().contains(r)
+            && !risk_text.contains(&r.to_lowercase())
         {
             continue;
         }
-        println!(
-            "{:<20}  {:<8}  {:<8}  {}",
+        out.push_str(&format!(
+            "{:<22}  {:<8}  {:<9}  {:<4}  {}\n",
             m.id(),
-            format!("{:?}", m.risk()),
-            format!("{:?}", m.group()),
+            group_text,
+            risk_text,
+            bool_label(m.requires_root()),
             m.name(),
-        );
+        ));
     }
+
+    out.push_str("\nFilters: wisp clean list --group dev --risk safe\n");
+    out.push_str("Inspect: wisp clean info <id>\n");
+    out
 }
 
 fn print_cleaner_info(target: &str) -> i32 {
+    match format_cleaner_info(target) {
+        Ok(rendered) => {
+            print!("{rendered}");
+            0
+        }
+        Err(CleanerInfoError::NotFound) => {
+            eprintln!("Cleaner '{target}' not found.");
+            eprintln!("List cleaners: wisp clean list");
+            1
+        }
+        Err(CleanerInfoError::Ambiguous(matches)) => {
+            eprintln!("Target '{target}' matched multiple cleaners:");
+            for id in matches {
+                eprintln!("  {id}");
+            }
+            eprintln!("Use a full cleaner ID. List cleaners: wisp clean list");
+            64
+        }
+    }
+}
+
+enum CleanerInfoError {
+    NotFound,
+    Ambiguous(Vec<String>),
+}
+
+fn format_cleaner_info(target: &str) -> Result<String, CleanerInfoError> {
     let entries = wisp_engine::resolve_targets(&[target]);
     match entries.as_slice() {
         [entry] => {
             let m = entry.meta;
-            println!("ID          {}", m.id());
-            println!("Name        {}", m.name());
-            println!("Group       {:?}", m.group());
-            println!("Risk        {:?}", m.risk());
-            println!("Root        {}", m.requires_root());
-            println!("Description {}", m.description());
-            0
+            let id = m.id();
+            let mut out = String::new();
+            out.push_str(&format!("ID          {id}\n"));
+            out.push_str(&format!("Name        {}\n", m.name()));
+            out.push_str(&format!("Group       {}\n", group_label(m.group())));
+            out.push_str(&format!("Risk        {}\n", risk_label(m.risk())));
+            out.push_str(&format!("Root        {}\n", bool_label(m.requires_root())));
+            out.push_str(&format!("Description {}\n", m.description()));
+            out.push_str(&format!("Preview     wisp clean {id}\n"));
+            out.push_str(&format!("Apply       wisp clean {id} --apply\n"));
+            Ok(out)
         }
-        [] => {
-            eprintln!("Cleaner '{target}' not found. Try: wisp clean list");
-            1
-        }
-        matches => {
-            eprintln!("Target '{target}' matched multiple cleaners:");
-            for entry in matches {
-                eprintln!("  {}", entry.meta.id());
-            }
-            eprintln!("Use a full cleaner ID. Try: wisp clean list");
-            64
-        }
+        [] => Err(CleanerInfoError::NotFound),
+        matches => Err(CleanerInfoError::Ambiguous(
+            matches
+                .iter()
+                .map(|entry| entry.meta.id().to_string())
+                .collect(),
+        )),
     }
 }
 
@@ -443,6 +485,14 @@ fn risk_label(risk: wisp_engine::types::RiskLevel) -> &'static str {
         wisp_engine::types::RiskLevel::Safe => "safe",
         wisp_engine::types::RiskLevel::Moderate => "moderate",
         wisp_engine::types::RiskLevel::Dangerous => "dangerous",
+    }
+}
+
+fn group_label(group: wisp_engine::types::CleanerGroup) -> &'static str {
+    match group {
+        wisp_engine::types::CleanerGroup::System => "system",
+        wisp_engine::types::CleanerGroup::User => "user",
+        wisp_engine::types::CleanerGroup::Dev => "dev",
     }
 }
 
@@ -816,5 +866,25 @@ mod tests {
         assert!(rendered.contains("External commands"));
         assert!(rendered.contains("Run: wisp clean --apply"));
         assert!(rendered.contains("Include high risk: wisp clean --deep"));
+    }
+
+    #[test]
+    fn cleaner_list_footer_explains_filters_and_info() {
+        let rendered = format_cleaner_list(None, None);
+
+        assert!(rendered.contains("wisp clean list --group dev"));
+        assert!(rendered.contains("wisp clean info <id>"));
+        assert!(rendered.contains("ROOT"));
+    }
+
+    #[test]
+    fn cleaner_info_includes_preview_command() {
+        let rendered = match format_cleaner_info("dev.npm") {
+            Ok(rendered) => rendered,
+            Err(_) => panic!("dev.npm cleaner exists"),
+        };
+
+        assert!(rendered.contains("Preview"));
+        assert!(rendered.contains("wisp clean dev.npm"));
     }
 }
