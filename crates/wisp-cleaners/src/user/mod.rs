@@ -1,6 +1,7 @@
 //! User-level cleaners (operate on `$HOME`-local paths).
 
 pub mod browser;
+pub mod common_cache;
 pub mod flatpak;
 pub mod linuxqq;
 pub mod thumbnails;
