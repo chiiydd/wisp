@@ -41,6 +41,7 @@ use self::home::HomePage;
 /// Which group to show in the cleaner page.
 #[derive(Clone, Copy, Debug)]
 pub enum CleanGroup {
+    Recommended,
     All,
     System,
     User,
@@ -57,6 +58,7 @@ impl CleanGroup {
     /// `LinuxQq`, which bundles two cleaners.
     pub fn as_targets(&self) -> &'static [&'static str] {
         match self {
+            CleanGroup::Recommended => &["@user", "@dev"],
             CleanGroup::All => &["@all"],
             CleanGroup::System => &["@system"],
             CleanGroup::User => &["@user"],
@@ -67,6 +69,7 @@ impl CleanGroup {
 
     pub fn label(&self) -> &'static str {
         match self {
+            CleanGroup::Recommended => "Recommended",
             CleanGroup::All => "All",
             CleanGroup::System => "System",
             CleanGroup::User => "User",

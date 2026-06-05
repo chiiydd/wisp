@@ -216,6 +216,37 @@ fn count_risks(plan: &CleanPlan) -> [usize; 4] {
     c
 }
 
+fn without_dangerous_actions(plan: CleanPlan) -> CleanPlan {
+    let mut actions = Vec::new();
+    let mut risks = Vec::new();
+
+    for (idx, action) in plan.actions.into_iter().enumerate() {
+        let risk = plan.risks.get(idx).copied().unwrap_or(plan.risk);
+        if risk == RiskLevel::Dangerous {
+            continue;
+        }
+        actions.push(action);
+        risks.push(risk);
+    }
+
+    let estimated_size = actions
+        .iter()
+        .map(|action| match action {
+            CleanAction::Delete { size, .. } => *size,
+            CleanAction::RunExternal { estimated_size, .. } => estimated_size.unwrap_or(0),
+        })
+        .sum();
+    let risk = risks.iter().copied().max().unwrap_or(RiskLevel::Trivial);
+
+    CleanPlan {
+        actions,
+        risks,
+        estimated_size,
+        risk,
+        ..plan
+    }
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 pub struct CleanerPage {
@@ -265,8 +296,8 @@ const IDLE_ACTIONS: &[IdleItem] = &[
         action: IdleAction::Preview,
     },
     IdleItem {
-        label: "Run now",
-        desc: "build plan & execute immediately",
+        label: "Apply",
+        desc: "build plan, confirm, then clean",
         action: IdleAction::Run,
     },
     IdleItem {
@@ -383,6 +414,11 @@ impl CleanerPage {
 
         // ── Left: what will be cleaned ────────────────────────────────────
         let cleaners: &[(&str, &str)] = match &self.group {
+            CleanGroup::Recommended => &[
+                ("Recommended clean", "user + dev rebuildable caches"),
+                ("Excluded by default", "dangerous media/site-data actions"),
+                ("Deep mode", "available in CLI: wisp clean --deep"),
+            ],
             CleanGroup::User => &[
                 ("Trash can", "~/.local/share/Trash"),
                 ("Browser cache", "Chromium · Firefox · Brave"),
@@ -1007,7 +1043,10 @@ impl CleanerPage {
         config.dry_run = dry_run;
         let engine = Engine::new(config, Arc::clone(&self.engine.distro));
         match engine.build_plan(targets).await {
-            Ok(plan) => {
+            Ok(mut plan) => {
+                if matches!(self.group, CleanGroup::Recommended) {
+                    plan = without_dangerous_actions(plan);
+                }
                 self.plan = Some(plan);
                 self.skipped.clear();
                 self.filter = RiskFilter::All;

@@ -35,27 +35,32 @@ enum MenuAction {
 const MENU_ITEMS: &[MenuItem] = &[
     MenuItem {
         label: "Analyze",
-        desc: "Explore disk usage interactively",
+        desc: "Find what is using disk space",
         action: MenuAction::Analyze,
     },
     MenuItem {
-        label: "Quick Clean (User)",
-        desc: "browser · QQ · trash · thumbnails",
+        label: "Recommended Clean",
+        desc: "user + dev caches, dangerous items excluded",
+        action: MenuAction::Clean(CleanGroup::Recommended),
+    },
+    MenuItem {
+        label: "Clean User Area",
+        desc: "trash · browsers · thumbnails · desktop caches",
         action: MenuAction::Clean(CleanGroup::User),
     },
     MenuItem {
-        label: "Quick Clean (System)",
-        desc: "pacman cache · journal · orphans",
-        action: MenuAction::Clean(CleanGroup::System),
-    },
-    MenuItem {
-        label: "Quick Clean (Dev)",
+        label: "Clean Dev Caches",
         desc: "cargo · npm · pip · go · docker",
         action: MenuAction::Clean(CleanGroup::Dev),
     },
     MenuItem {
-        label: "Quick Clean (LinuxQQ)",
-        desc: "QQ caches + chat media (skips chat history)",
+        label: "Clean System Area",
+        desc: "pacman cache · journal · orphans",
+        action: MenuAction::Clean(CleanGroup::System),
+    },
+    MenuItem {
+        label: "Clean LinuxQQ",
+        desc: "QQ caches and optional media cleanup",
         action: MenuAction::Clean(CleanGroup::LinuxQq),
     },
     MenuItem {
@@ -216,5 +221,16 @@ impl HomePage {
             KeyHint::new("⏎", "select"),
             KeyHint::new("q", "quit"),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recommended_clean_is_first_cleaning_path() {
+        assert_eq!(MENU_ITEMS[0].label, "Analyze");
+        assert_eq!(MENU_ITEMS[1].label, "Recommended Clean");
     }
 }
