@@ -122,6 +122,7 @@ async fn dispatch_clean(
         Some(target) => target.to_owned(),
         None => "recommended".to_owned(),
     };
+    let recommended = args.target.is_none();
 
     let engine_cfg = wisp_engine::EngineConfig {
         dry_run,
@@ -140,14 +141,14 @@ async fn dispatch_clean(
 
     let show_progress = !global.quiet && output == cli::OutputFormat::Human;
     if show_progress {
-        eprint!("Building plan for '{target_label}'...");
+        eprintln!("Building plan for '{target_label}'...");
     }
     let mut plan = engine.build_plan(&targets).await?;
     if args.target.is_none() && !args.deep {
         plan = without_dangerous_actions(plan);
     }
     if show_progress {
-        eprintln!(" done.");
+        eprintln!("Plan ready.");
     }
 
     if plan.actions.is_empty() && output == cli::OutputFormat::Human {
@@ -156,7 +157,15 @@ async fn dispatch_clean(
     }
 
     match output {
-        cli::OutputFormat::Human => print_plan_human(&plan, dry_run),
+        cli::OutputFormat::Human => print_plan_human(
+            &plan,
+            CleanDisplayOptions {
+                target_label: &target_label,
+                dry_run,
+                recommended,
+                deep: args.deep,
+            },
+        ),
         cli::OutputFormat::Json => {
             let env =
                 wisp_engine::types::OutputEnvelope::new(format!("clean {target_label}"), &plan)
@@ -173,9 +182,6 @@ async fn dispatch_clean(
     }
 
     if dry_run {
-        if output == cli::OutputFormat::Human {
-            println!("\nPreview only. No changes made. Use `wisp clean --apply` to run it.");
-        }
         return Ok(0);
     }
 
@@ -251,98 +257,254 @@ fn without_dangerous_actions(plan: wisp_engine::types::CleanPlan) -> wisp_engine
 }
 
 fn print_cleaner_list(group: Option<&str>, risk: Option<&str>) {
-    println!("{:<20}  {:<8}  {:<8}  NAME", "ID", "RISK", "GROUP");
-    println!("{}", "-".repeat(70));
+    print!("{}", format_cleaner_list(group, risk));
+}
+
+fn format_cleaner_list(group: Option<&str>, risk: Option<&str>) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{:<22}  {:<8}  {:<9}  {:<4}  NAME\n",
+        "ID", "GROUP", "RISK", "ROOT"
+    ));
+    out.push_str(&format!("{}\n", "-".repeat(82)));
+
     for entry in wisp_engine::all_cleaners() {
         let m = entry.meta;
+        let group_text = group_label(m.group());
+        let risk_text = risk_label(m.risk());
         if let Some(g) = group
-            && !format!("{:?}", m.group()).to_lowercase().contains(g)
+            && !group_text.contains(&g.to_lowercase())
         {
             continue;
         }
         if let Some(r) = risk
-            && !format!("{:?}", m.risk()).to_lowercase().contains(r)
+            && !risk_text.contains(&r.to_lowercase())
         {
             continue;
         }
-        println!(
-            "{:<20}  {:<8}  {:<8}  {}",
+        out.push_str(&format!(
+            "{:<22}  {:<8}  {:<9}  {:<4}  {}\n",
             m.id(),
-            format!("{:?}", m.risk()),
-            format!("{:?}", m.group()),
+            group_text,
+            risk_text,
+            bool_label(m.requires_root()),
             m.name(),
-        );
+        ));
     }
+
+    out.push_str("\nFilters: wisp clean list --group dev --risk safe\n");
+    out.push_str("Inspect: wisp clean info <id>\n");
+    out
 }
 
 fn print_cleaner_info(target: &str) -> i32 {
-    let entries = wisp_engine::resolve_targets(&[target]);
-    match entries.as_slice() {
-        [entry] => {
-            let m = entry.meta;
-            println!("ID          {}", m.id());
-            println!("Name        {}", m.name());
-            println!("Group       {:?}", m.group());
-            println!("Risk        {:?}", m.risk());
-            println!("Root        {}", m.requires_root());
-            println!("Description {}", m.description());
+    match format_cleaner_info(target) {
+        Ok(rendered) => {
+            print!("{rendered}");
             0
         }
-        [] => {
-            eprintln!("Cleaner '{target}' not found. Try: wisp clean list");
+        Err(CleanerInfoError::NotFound) => {
+            eprintln!("Cleaner '{target}' not found.");
+            eprintln!("List cleaners: wisp clean list");
             1
         }
-        matches => {
+        Err(CleanerInfoError::Ambiguous(matches)) => {
             eprintln!("Target '{target}' matched multiple cleaners:");
-            for entry in matches {
-                eprintln!("  {}", entry.meta.id());
+            for id in matches {
+                eprintln!("  {id}");
             }
-            eprintln!("Use a full cleaner ID. Try: wisp clean list");
+            eprintln!("Use a full cleaner ID. List cleaners: wisp clean list");
             64
         }
     }
 }
 
-fn print_plan_human(plan: &wisp_engine::types::CleanPlan, dry_run: bool) {
-    let prefix = if dry_run { "[DRY RUN] " } else { "" };
-    println!(
-        "\n{}Plan  {}  risk={:?}  actions={}",
-        prefix,
-        plan.id,
-        plan.risk,
-        plan.actions.len()
-    );
-    println!("{}", "─".repeat(60));
-    for action in &plan.actions {
-        match action {
-            wisp_engine::types::CleanAction::Delete { path, size, via } => {
-                println!(
-                    "  DELETE  {:>10}  {:?}  {path}",
-                    humansize::format_size(*size, humansize::DECIMAL),
-                    via,
-                );
-            }
-            wisp_engine::types::CleanAction::RunExternal {
-                cmd,
-                estimated_size,
-            } => {
-                let est = estimated_size
-                    .map(|s| humansize::format_size(s, humansize::DECIMAL))
-                    .unwrap_or_else(|| "?".into());
-                println!(
-                    "  RUN     {:>10}  {} {}",
-                    est,
-                    cmd.program,
-                    cmd.args.join(" ")
-                );
-            }
+enum CleanerInfoError {
+    NotFound,
+    Ambiguous(Vec<String>),
+}
+
+fn format_cleaner_info(target: &str) -> Result<String, CleanerInfoError> {
+    let entries = wisp_engine::resolve_targets(&[target]);
+    match entries.as_slice() {
+        [entry] => {
+            let m = entry.meta;
+            let id = m.id();
+            let mut out = String::new();
+            out.push_str(&format!("ID          {id}\n"));
+            out.push_str(&format!("Name        {}\n", m.name()));
+            out.push_str(&format!("Group       {}\n", group_label(m.group())));
+            out.push_str(&format!("Risk        {}\n", risk_label(m.risk())));
+            out.push_str(&format!("Root        {}\n", bool_label(m.requires_root())));
+            out.push_str(&format!("Description {}\n", m.description()));
+            out.push_str(&format!("Preview     wisp clean {id}\n"));
+            out.push_str(&format!("Apply       wisp clean {id} --apply\n"));
+            Ok(out)
+        }
+        [] => Err(CleanerInfoError::NotFound),
+        matches => Err(CleanerInfoError::Ambiguous(
+            matches
+                .iter()
+                .map(|entry| entry.meta.id().to_string())
+                .collect(),
+        )),
+    }
+}
+
+const HUMAN_PREVIEW_LIMIT: usize = 8;
+
+#[derive(Clone, Copy)]
+struct CleanDisplayOptions<'a> {
+    target_label: &'a str,
+    dry_run: bool,
+    recommended: bool,
+    deep: bool,
+}
+
+fn print_plan_human(plan: &wisp_engine::types::CleanPlan, options: CleanDisplayOptions<'_>) {
+    print!("{}", format_plan_human(plan, options));
+}
+
+fn format_plan_human(
+    plan: &wisp_engine::types::CleanPlan,
+    options: CleanDisplayOptions<'_>,
+) -> String {
+    let title = if options.dry_run { "Preview" } else { "Plan" };
+    let mode = if options.dry_run { "preview" } else { "apply" };
+    let mut out = String::new();
+
+    out.push_str(&format!("{title}: {}\n", options.target_label));
+    out.push_str(&format!(
+        "Mode: {mode}  Actions: {}  Risk: {}  Estimated reclaim: {}\n",
+        plan.actions.len(),
+        risk_label(plan.risk),
+        humansize::format_size(plan.estimated_size, humansize::DECIMAL)
+    ));
+    out.push_str(&format!(
+        "Root required: {}\n",
+        bool_label(plan.required_privileges.requires_root)
+    ));
+    if options.recommended && !options.deep {
+        out.push_str("High-risk actions are excluded. Use `wisp clean --deep` to preview them.\n");
+    }
+    if !plan.warnings.is_empty() {
+        out.push_str("\nWarnings\n");
+        out.push_str("--------\n");
+        for warning in &plan.warnings {
+            out.push_str(&format!("  - {warning}\n"));
         }
     }
-    println!("{}", "─".repeat(60));
-    println!(
-        "  Total estimated: {}",
-        humansize::format_size(plan.estimated_size, humansize::DECIMAL)
-    );
+
+    out.push_str("\nFiles and directories\n");
+    out.push_str("---------------------\n");
+    render_delete_actions(plan, &mut out);
+
+    out.push_str("\nExternal commands\n");
+    out.push_str("-----------------\n");
+    render_external_actions(plan, &mut out);
+
+    if options.dry_run {
+        out.push_str("\nNext steps\n");
+        out.push_str("----------\n");
+        out.push_str("  Run: wisp clean --apply\n");
+        out.push_str("  Inspect: wisp clean list\n");
+        out.push_str("  Include high risk: wisp clean --deep\n");
+    }
+
+    out
+}
+
+fn render_delete_actions(plan: &wisp_engine::types::CleanPlan, out: &mut String) {
+    let mut total = 0usize;
+    for (idx, action) in plan.actions.iter().enumerate() {
+        let wisp_engine::types::CleanAction::Delete { path, size, via } = action else {
+            continue;
+        };
+        total += 1;
+        if total <= HUMAN_PREVIEW_LIMIT {
+            let risk = plan.risks.get(idx).copied().unwrap_or(plan.risk);
+            out.push_str(&format!(
+                "  {:>10}  {:<8}  {:<8}  {path}\n",
+                humansize::format_size(*size, humansize::DECIMAL),
+                risk_label(risk),
+                deletion_via_label(*via)
+            ));
+        }
+    }
+    append_hidden_count(out, total, "delete action");
+}
+
+fn render_external_actions(plan: &wisp_engine::types::CleanPlan, out: &mut String) {
+    let mut total = 0usize;
+    for (idx, action) in plan.actions.iter().enumerate() {
+        let wisp_engine::types::CleanAction::RunExternal {
+            cmd,
+            estimated_size,
+        } = action
+        else {
+            continue;
+        };
+        total += 1;
+        if total <= HUMAN_PREVIEW_LIMIT {
+            let risk = plan.risks.get(idx).copied().unwrap_or(plan.risk);
+            let est = estimated_size
+                .map(|s| humansize::format_size(s, humansize::DECIMAL))
+                .unwrap_or_else(|| "unknown".into());
+            out.push_str(&format!(
+                "  {:>10}  {:<8}  {} {}\n",
+                est,
+                risk_label(risk),
+                cmd.program,
+                cmd.args.join(" ")
+            ));
+        }
+    }
+    append_hidden_count(out, total, "external command");
+}
+
+fn append_hidden_count(out: &mut String, total: usize, label: &str) {
+    if total == 0 {
+        out.push_str("  none\n");
+    } else if total > HUMAN_PREVIEW_LIMIT {
+        out.push_str(&format!(
+            "  ... and {} more {}{}\n",
+            total - HUMAN_PREVIEW_LIMIT,
+            label,
+            if total - HUMAN_PREVIEW_LIMIT == 1 {
+                ""
+            } else {
+                "s"
+            }
+        ));
+    }
+}
+
+fn risk_label(risk: wisp_engine::types::RiskLevel) -> &'static str {
+    match risk {
+        wisp_engine::types::RiskLevel::Trivial => "trivial",
+        wisp_engine::types::RiskLevel::Safe => "safe",
+        wisp_engine::types::RiskLevel::Moderate => "moderate",
+        wisp_engine::types::RiskLevel::Dangerous => "dangerous",
+    }
+}
+
+fn group_label(group: wisp_engine::types::CleanerGroup) -> &'static str {
+    match group {
+        wisp_engine::types::CleanerGroup::System => "system",
+        wisp_engine::types::CleanerGroup::User => "user",
+        wisp_engine::types::CleanerGroup::Dev => "dev",
+    }
+}
+
+fn deletion_via_label(via: wisp_engine::types::DeletionVia) -> &'static str {
+    match via {
+        wisp_engine::types::DeletionVia::Trash => "trash",
+        wisp_engine::types::DeletionVia::Direct => "direct",
+    }
+}
+
+fn bool_label(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
 
 fn print_event_human(event: &wisp_engine::types::ProgressEvent) {
@@ -646,4 +808,83 @@ fn dispatch_man() -> Result<i32> {
     let man = clap_mangen::Man::new(cmd);
     man.render(&mut std::io::stdout())?;
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wisp_engine::types::CleanPlan;
+
+    fn sample_plan() -> CleanPlan {
+        let value = serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000000",
+            "actions": [
+                {
+                    "kind": "delete",
+                    "path": "/tmp/a",
+                    "size": 1024,
+                    "via": "direct"
+                },
+                {
+                    "kind": "run_external",
+                    "cmd": {
+                        "program": "npm",
+                        "args": ["cache", "clean", "--force"]
+                    },
+                    "estimated_size": null
+                }
+            ],
+            "risks": ["safe", "moderate"],
+            "estimated_size": 1024,
+            "required_privileges": {
+                "requires_root": false
+            },
+            "risk": "moderate",
+            "warnings": []
+        });
+        match serde_json::from_value(value) {
+            Ok(plan) => plan,
+            Err(err) => panic!("sample plan must deserialize: {err}"),
+        }
+    }
+
+    #[test]
+    fn human_preview_starts_with_summary_and_next_steps() {
+        let rendered = format_plan_human(
+            &sample_plan(),
+            CleanDisplayOptions {
+                target_label: "recommended",
+                dry_run: true,
+                recommended: true,
+                deep: false,
+            },
+        );
+
+        assert!(rendered.contains("Preview: recommended"));
+        assert!(rendered.contains("Estimated reclaim:"));
+        assert!(rendered.contains("Files and directories"));
+        assert!(rendered.contains("External commands"));
+        assert!(rendered.contains("Run: wisp clean --apply"));
+        assert!(rendered.contains("Include high risk: wisp clean --deep"));
+    }
+
+    #[test]
+    fn cleaner_list_footer_explains_filters_and_info() {
+        let rendered = format_cleaner_list(None, None);
+
+        assert!(rendered.contains("wisp clean list --group dev"));
+        assert!(rendered.contains("wisp clean info <id>"));
+        assert!(rendered.contains("ROOT"));
+    }
+
+    #[test]
+    fn cleaner_info_includes_preview_command() {
+        let rendered = match format_cleaner_info("dev.npm") {
+            Ok(rendered) => rendered,
+            Err(_) => panic!("dev.npm cleaner exists"),
+        };
+
+        assert!(rendered.contains("Preview"));
+        assert!(rendered.contains("wisp clean dev.npm"));
+    }
 }
