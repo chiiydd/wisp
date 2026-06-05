@@ -18,13 +18,13 @@ CLI + TUI 一体的磁盘清理工具：清 `pacman` 缓存、journal、孤儿�
 
 ## 特性
 
-- **一键清理**：`wisp clean @user / @system / @dev / @all`，默认 dry-run，安全可预览。
+- **一键清理**：`wisp clean` 预览推荐清理项，`wisp clean --apply` 才真正执行。
 - **分目标清理器**：pacman、paccache、orphans、journal、/tmp、回收站、浏览器缓存、常见桌面缓存、缩略图、cargo、npm、JavaScript 工具链、pip、Python 工具、go、flatpak、docker。
 - **交互 TUI**：neovim 风格 chrome，模式徽章、状态栏键位提示；按 `v` 在柱状图与极坐标扇形图之间切换。
 - **默认安全**：三档风险（Safe / Moderate / Dangerous），显式确认，硬编码路径黑名单，删除默认走回收站，`--no-trash`（兼容别名 `--purge`）才永久删除。
 - **流式输出**：`--output json|jsonl` 适配脚本，`human` 适配终端阅读。
-- **审计历史**：每次删除都记录大小、目标与时间戳，`wisp history list` / `show` 可查；`restore` 规划中。
-- **shell 补全 + man page**：`wisp completion zsh`、`wisp man` 一键生成。
+- **审计历史**：每次删除都记录大小、目标与时间戳；高级用户可用隐藏的 `history list` / `show` 查询。
+- **高级入口**：shell 补全、man page、profile/state 等命令保留但不出现在普通帮助里。
 
 ## 安装
 
@@ -59,30 +59,27 @@ cargo install --path crates/wisp-cli --locked
 
 ```sh
 wisp                       # 进入 TUI
-wisp clean @user -n        # 预览用户态清理（不真删）
-wisp clean pacman -y       # 真正执行 pacman 缓存清理
+wisp clean                 # 预览推荐清理（不真删）
+wisp clean --apply         # 执行推荐清理
+wisp clean --deep          # 预览高风险清理项
+wisp clean list            # 高级：列出所有清理器
 wisp analyze ~/Downloads   # 一次性分析目录（不进 TUI）
 wisp doctor                # 环境与权限检查
-wisp history list          # 查看历史清理记录
 ```
 
 ## 命令总览
 
 ```
-wisp [--output human|json|jsonl]
+wisp
   ├─ tui                    # 全屏交互界面
-  ├─ clean <target> [-n|-y] # @all · @system · @user · @dev · 或单清理器
-  │   ├─ list               # 列出可用清理器
-  │   └─ info <target>      # 查看单个清理器详情
+  ├─ clean [--apply]        # 默认预览推荐清理项
+  │   ├─ --deep             # 包含高风险清理项
+  │   ├─ list               # 高级：列出可用清理器
+  │   └─ info <target>      # 高级：查看单个清理器详情
   ├─ analyze [path]         # treemap / tree / flat 三种视图
-  │   └─ cache list|clear   # 管理已保存的扫描结果
-  ├─ history list|show      # restore / clear 规划中，当前返回 70
-  ├─ state fav list         # fav add/remove、export/import 规划中
-  ├─ config info|show|edit  # key show、set、reset 规划中
-  ├─ profile                # 命名清理 profile 规划中
+  ├─ config info|show|edit  # 配置路径、查看与编辑
   ├─ doctor                 # 环境诊断
-  ├─ completion <shell>     # bash · zsh · fish · powershell · elvish
-  └─ man                    # 生成 man page
+  └─ help                   # 查看完整帮助
 ```
 
 ## TUI 按键
@@ -116,9 +113,9 @@ wisp [--output human|json|jsonl]
 ## 安全模型
 
 - 硬编码黑名单（`/`、`/etc`、`/usr`、`/home`、`/var`…）在到达执行器前直接拒绝。
-- 三档风险等级；**Dangerous** 级别的清理器即便确认过仍要求显式 `--yes`。
+- 三档风险等级；推荐清理默认排除 **Dangerous** 级别，传入 `--deep` 才会纳入。
 - 删除默认走系统回收站；如需永久删除请加 `--no-trash`（兼容别名 `--purge`）。
-- `clean` 默认是 `--dry-run`（别名 `-n`）；只有显式 `-y` / `--yes` 才会真正动文件。
+- `wisp clean` 默认只预览；传入 `--apply` 才会真正执行，旧的 `-y` / `--yes` 别名仍兼容。
 - 历史记录写入 `~/.local/state/wisp/history.jsonl`，审计日志写入 `~/.local/state/wisp/audit.log`。
 
 ## 开发
